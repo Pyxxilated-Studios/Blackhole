@@ -13,14 +13,13 @@ COPY ./Cargo.toml ./Cargo.toml
 RUN cargo build --release
 RUN rm bin/*.rs lib/*.rs
 
-RUN cargo build --release
-
-COPY ./bin ./lib ./
+COPY ./bin ./bin
+COPY ./lib ./lib
 
 RUN rm ./target/release/deps/*blackhole*
 RUN cargo build --release
 
-FROM scratch
+FROM debian:buster-slim
 
 # Copy build artifact from build stage
 COPY --from=build /blackhole/target/release/blackhole .

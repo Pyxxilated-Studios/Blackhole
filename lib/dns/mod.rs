@@ -412,8 +412,7 @@ impl Packet {
         let _ = stream.read(&mut buffer.buf).await?;
 
         let packet = Packet::try_from(&mut buffer)?;
-        // trace!("{:#?}", packet);
-        trace!("{:#?}", buffer);
+        trace!("{:#?}", packet);
 
         Ok(packet)
     }
