@@ -1,22 +1,10 @@
 FROM rust as build
 
-RUN USER=root cargo new --bin blackhole
 WORKDIR /blackhole
 
-RUN mv ./src ./bin
-RUN mkdir lib && touch lib/src.rs
+COPY . .
 
-COPY ./Cargo.lock ./Cargo.lock
-COPY ./Cargo.toml ./Cargo.toml
-
-# Cache Dependencies
-RUN cargo build --release
-RUN rm bin/*.rs lib/*.rs
-
-COPY ./bin ./bin
-COPY ./lib ./lib
-
-RUN rm ./target/release/deps/*blackhole*
+RUN rm ./target/release/*blackhole*
 RUN cargo build --release
 
 FROM debian:buster-slim
@@ -28,6 +16,8 @@ VOLUME /config
 
 ENV LOG_LEVEL="error"
 
-EXPOSE 6379
+EXPOSE 6379/udp
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "dig", "-p", "6379", "example.com" ]
 
 ENTRYPOINT ["./blackhole"]
