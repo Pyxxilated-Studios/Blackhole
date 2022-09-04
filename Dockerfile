@@ -9,7 +9,7 @@ RUN yarn install
 COPY ./client .
 RUN yarn build
 
-FROM rustlang/rust:nightly-slim as serverbuild
+FROM rustlang/rust:nightly as serverbuild
 
 RUN USER=root cargo new --bin blackhole
 WORKDIR /blackhole
@@ -25,9 +25,10 @@ RUN cargo build --release
 
 # Now build the actual server
 RUN rm bin/*.rs lib/*.rs
+RUN find target/release -maxdepth 1 -type f -delete
 COPY ./bin ./bin
 COPY ./lib ./lib
-RUN find target/release -maxdepth 1 -type f -delete
+RUN touch bin/main.rs lib/src.rs
 RUN cargo build --release
 
 FROM node:18-buster-slim
@@ -42,7 +43,7 @@ COPY ./entrypoint.sh .
 
 VOLUME /config
 
-ENV LOG_LEVEL="error"
+ENV LOG_LEVEL="warn"
 
 EXPOSE 6379/tcp 6379/udp 3000/tcp
 
