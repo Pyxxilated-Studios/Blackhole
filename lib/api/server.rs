@@ -10,10 +10,10 @@ pub struct Server {
     context: api::Context,
 }
 
-fn with_ctx(
-    ctx: api::Context,
+fn with_context(
+    context: api::Context,
 ) -> impl Filter<Extract = (api::Context,), Error = std::convert::Infallible> + Clone {
-    warp::any().map(move || ctx.clone())
+    warp::any().map(move || context.clone())
 }
 
 impl Server {
@@ -24,17 +24,26 @@ impl Server {
     pub async fn run(self) {
         let requests = warp::path("requests")
             .and(warp::path::end())
-            .and(with_ctx(self.context.clone()))
+            .and(with_context(self.context.clone()))
             .and_then(Server::requests);
 
         let api = warp::path("api").and(requests);
 
-        warp::serve(api).run(([127, 0, 0, 1], 3000)).await;
+        warp::serve(api).run(([0, 0, 0, 0], 5000)).await;
     }
 
     async fn requests(ctx: api::Context) -> Result<impl warp::Reply, Infallible> {
         Ok(Response::builder()
             .header("Content-Type", "application/json")
-            .body(json!(*ctx.server.requests().read().await).to_string()))
+            .body(
+                json!(ctx
+                    .server
+                    .requests()
+                    .read()
+                    .await
+                    .iter()
+                    .collect::<Vec<(&String, &usize)>>())
+                .to_string(),
+            ))
     }
 }

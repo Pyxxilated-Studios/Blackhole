@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use tokio::{net::TcpListener, task::JoinError};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -29,7 +28,7 @@ fn enable_tracing() {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), JoinError> {
+async fn main() {
     enable_tracing();
 
     // let listener = TcpListener::bind("0.0.0.0:6379").await?;
@@ -46,16 +45,15 @@ async fn main() -> Result<(), JoinError> {
         server: udp_server.clone(),
     });
 
-    let udp_server = tokio::spawn(async move {
-        let udp_server = udp_server.clone();
+    tokio::spawn(async move {
         udp_server.run().await.unwrap();
     });
 
-    let api_server = tokio::spawn(async move {
+    tokio::spawn(async move {
         api_server.run().await;
     });
 
-    let tcp_server = tokio::spawn(async move {
+    tokio::spawn(async move {
         // while let Ok((mut stream, _peer)) = listener.accept().await {
         //     stream.readable().await.unwrap();
         //     let _ = blackhole::dns::packet::Packet::from_tcp(&mut stream)
@@ -63,6 +61,4 @@ async fn main() -> Result<(), JoinError> {
         //         .unwrap();
         // }
     });
-
-    tokio::join!(api_server, udp_server, tcp_server).0
 }

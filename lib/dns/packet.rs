@@ -272,12 +272,53 @@ impl TryFrom<&mut Buffer> for Packet {
 }
 
 mod test {
-    use crate::dns::packet::{Buffer, Packet};
+    use crate::dns::{
+        packet::{Buffer, Packet},
+        Header, QualifiedName, QueryType, Question, Record,
+        ResultCode::NOERROR,
+    };
 
     #[test]
     fn serialise() {
-        let mut packet = Packet::default();
-        packet.header.id = 2000;
+        let packet = Packet {
+            header: Header {
+                id: 56029,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 2,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("pyxxilated.studio".to_owned()),
+                qtype: QueryType::MX,
+            }],
+            answers: vec![
+                Record::MX {
+                    domain: QualifiedName("pyxxilated.studio".to_owned()),
+                    priority: 10,
+                    host: QualifiedName("mail.protonmail.ch".to_owned()),
+                    ttl: 3600,
+                },
+                Record::MX {
+                    domain: QualifiedName("pyxxilated.studio".to_owned()),
+                    priority: 20,
+                    host: QualifiedName("mailsec.protonmail.ch".to_owned()),
+                    ttl: 3600,
+                },
+            ],
+            authorities: vec![],
+            resources: vec![],
+        };
 
         let pack = Packet::try_from(&mut Buffer::try_from(packet.clone()).unwrap()).unwrap();
         assert_eq!(packet.header, pack.header);

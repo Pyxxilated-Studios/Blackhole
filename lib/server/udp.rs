@@ -9,7 +9,7 @@ use tracing::instrument;
 
 use crate::dns::{
     packet::{Buffer, Packet},
-    Result,
+    Result, ResultCode,
 };
 
 pub struct ServerBuilder {
@@ -68,8 +68,8 @@ impl Server {
                         .or_default() += 1;
                 }
 
-                let response_buffer = server.forward(packet).await.unwrap().try_into().unwrap();
-                server.respond(response_buffer, address).await.unwrap();
+                let response_packet = server.forward(packet).await.unwrap();
+                server.respond(response_packet, address).await.unwrap();
             });
         }
 
@@ -87,7 +87,17 @@ impl Server {
     }
 
     #[instrument(skip(self))]
-    async fn respond(&self, buffer: Buffer, address: SocketAddr) -> Result<()> {
+    async fn respond(&self, mut packet: Packet, address: SocketAddr) -> Result<()> {
+        let buffer = Buffer::try_from(packet.clone()).unwrap_or_else(|_| {
+            packet.header.rescode = ResultCode::SERVFAIL;
+            packet.header.answers = 0;
+            packet.answers = vec![];
+            packet.authorities = vec![];
+            packet.resources = vec![];
+
+            Buffer::try_from(packet).unwrap()
+        });
+
         self.socket.read().await.writable().await?;
         self.socket
             .read()
