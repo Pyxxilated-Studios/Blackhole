@@ -1,35 +1,16 @@
 <script lang="ts">
 	import Navigation from '../components/Navigation.svelte';
 
-	const api = 'http://localhost:5000/api';
-	let requests: [string, number][] | undefined = undefined;
+	export let data: Record<string, [string, number][]>;
 	let error: string | undefined = undefined;
-
-	function retrieve() {
-		fetch(`${api}/requests`)
-			.then((value) =>
-				value.json().then((resp) => {
-					error = undefined;
-					requests = resp;
-				})
-			)
-			.catch(() => {
-				if (undefined === requests) {
-					error = 'Unable to communicate with API';
-				}
-			});
-	}
-
-	setInterval(retrieve, 30000);
-
-	retrieve();
+	console.debug('Requests: ', data.requests);
 </script>
 
 <Navigation />
 
 <main>
-	{#if requests}
-		{#each Array.from(requests) as entry}
+	{#if data.requests}
+		{#each Array.from(data.requests) as entry}
 			<p>{entry[0]}: {entry[1]}</p>
 		{/each}
 	{:else if error}
@@ -39,7 +20,6 @@
 
 <style global>
 	html {
-		background-color: aquamarine;
 		color: #ecf0f1;
 		background-color: rgb(17, 17, 34);
 		font-size: 1.25rem;

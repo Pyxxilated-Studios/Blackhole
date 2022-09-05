@@ -5,8 +5,7 @@ const config: UserConfig = {
 	plugins: [sveltekit()],
 	optimizeDeps: {
 		esbuildOptions: {
-			minify: true,
-			splitting: true
+			minify: true
 		}
 	},
 	build: {
