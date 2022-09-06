@@ -9,7 +9,7 @@ path = "lib/src.rs"
 
 [[bin]]
 name = "blackhole"
-path = "bin/main.rs"
+path = "src/main.rs"
 
 [dependencies]
 console-subscriber = "0.1"
