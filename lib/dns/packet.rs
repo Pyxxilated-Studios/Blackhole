@@ -17,7 +17,7 @@ pub(crate) trait IO {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Buffer {
+pub struct Buffer {
     pub buf: [u8; DNS_PACKET_SIZE],
     pub pos: usize,
 }
@@ -274,8 +274,7 @@ impl TryFrom<&mut Buffer> for Packet {
 mod test {
     use crate::dns::{
         packet::{Buffer, Packet},
-        Header, QualifiedName, QueryType, Question, Record,
-        ResultCode::NOERROR,
+        Header, QualifiedName, QueryType, Question, Record, ResultCode,
     };
 
     #[test]
@@ -288,7 +287,7 @@ mod test {
                 authoritative_answer: false,
                 opcode: 0,
                 response: true,
-                rescode: NOERROR,
+                rescode: ResultCode::NOERROR,
                 checking_disabled: false,
                 authed_data: true,
                 z: false,
@@ -299,20 +298,20 @@ mod test {
                 resource_entries: 0,
             },
             questions: vec![Question {
-                name: QualifiedName("pyxxilated.studio".to_owned()),
+                name: QualifiedName("example.com".to_owned()),
                 qtype: QueryType::MX,
             }],
             answers: vec![
                 Record::MX {
-                    domain: QualifiedName("pyxxilated.studio".to_owned()),
+                    domain: QualifiedName("example.com".to_owned()),
                     priority: 10,
-                    host: QualifiedName("mail.protonmail.ch".to_owned()),
+                    host: QualifiedName("mail.example.com".to_owned()),
                     ttl: 3600,
                 },
                 Record::MX {
-                    domain: QualifiedName("pyxxilated.studio".to_owned()),
+                    domain: QualifiedName("example.com".to_owned()),
                     priority: 20,
-                    host: QualifiedName("mailsec.protonmail.ch".to_owned()),
+                    host: QualifiedName("mailsec.example.com".to_owned()),
                     ttl: 3600,
                 },
             ],
