@@ -1,9 +1,26 @@
 <script lang="ts">
-	import Navigation from '../components/Navigation.svelte';
+	import { page } from '$app/stores';
+	import Navigation from '../lib/components/Navigation.svelte';
 
-	export let data: Record<string, [string, number][]>;
+	type Requests = [string, number][];
+
+	export let data: { requests: Requests; refetch: () => Promise<Requests> };
+
+	const refetch = async () => {
+		try {
+			const resp = await fetch(`${$page.url.origin}/api/requests`);
+			const json = await resp.json();
+			data.requests = json;
+			error = undefined;
+		} catch (err: any) {
+			error = err;
+		}
+	};
+
 	let error: string | undefined = undefined;
-	console.debug('Requests: ', data.requests);
+
+	setInterval(refetch, 30000);
+	refetch();
 </script>
 
 <Navigation />
