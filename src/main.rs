@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use tracing::metadata::LevelFilter;
+use tracing::{error, metadata::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
 fn enable_tracing() {
@@ -32,26 +32,26 @@ async fn main() {
     enable_tracing();
 
     // let listener = TcpListener::bind("0.0.0.0:6379").await?;
-    let udp_server = Arc::new(
-        blackhole::server::udp::Server::builder()
-            .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-            .on(6379)
-            .build()
-            .await
-            .unwrap(),
-    );
+    let udp_server = match blackhole::server::udp::Server::builder()
+        .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+        .on(6379)
+        .build()
+        .await
+    {
+        Ok(server) => Arc::new(server),
+        Err(err) => {
+            error!("{err:?}");
+            return;
+        }
+    };
 
     let api_server = blackhole::api::server::Server::with_context(blackhole::api::Context {
         server: udp_server.clone(),
     });
 
-    tokio::spawn(async move {
-        udp_server.run().await.unwrap();
-    });
+    let udp_server = tokio::spawn(async move { udp_server.run().await });
 
-    tokio::spawn(async move {
-        api_server.run().await;
-    });
+    let api_server = tokio::spawn(async move { api_server.run().await });
 
     tokio::spawn(async move {
         // while let Ok((mut stream, _peer)) = listener.accept().await {
@@ -61,4 +61,6 @@ async fn main() {
         //         .unwrap();
         // }
     });
+
+    let _ = tokio::join!(udp_server, api_server);
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use tokio::{net::UdpSocket, sync::RwLock};
-use tracing::instrument;
+use tracing::{error, info};
 
 use crate::dns::{
     packet::{Buffer, Packet},
@@ -55,6 +55,8 @@ impl Server {
     }
 
     pub async fn run(&self) -> Result<()> {
+        info!("listening on {}", self.socket.read().await.local_addr()?);
+
         while let Ok((packet, address)) = self.receive().await {
             let server = self.clone();
 
@@ -68,25 +70,27 @@ impl Server {
                         .or_default() += 1;
                 }
 
-                let response_packet = server.forward(packet).await.unwrap();
-                server.respond(response_packet, address).await.unwrap();
+                server.serve(packet, address).await;
             });
         }
 
         Ok(())
     }
 
-    #[instrument(ret, skip(self))]
     async fn receive(&self) -> Result<(Packet, SocketAddr)> {
         let mut buffer = Buffer::default();
 
         self.socket.read().await.readable().await?;
-        let (_, address) = self.socket.read().await.recv_from(&mut buffer.buf).await?;
+        let (_, address) = self
+            .socket
+            .read()
+            .await
+            .recv_from(buffer.buffer_mut())
+            .await?;
 
         Ok((Packet::try_from(&mut buffer)?, address))
     }
 
-    #[instrument(skip(self))]
     async fn respond(&self, mut packet: Packet, address: SocketAddr) -> Result<()> {
         let buffer = Buffer::try_from(packet.clone()).unwrap_or_else(|_| {
             packet.header.rescode = ResultCode::SERVFAIL;
@@ -102,13 +106,12 @@ impl Server {
         self.socket
             .read()
             .await
-            .send_to(&buffer.buf[0..buffer.pos], address)
+            .send_to(&buffer.buffer()[0..buffer.pos()], address)
             .await?;
 
         Ok(())
     }
 
-    #[instrument(ret, skip(self))]
     async fn forward(&self, packet: Packet) -> Result<Packet> {
         const SERVER: (&str, u16) = ("192.168.1.123", 53);
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 43210)).await?;
@@ -116,12 +119,25 @@ impl Server {
         let buffer = Buffer::try_from(packet)?;
 
         forwarder
-            .send_to(&buffer.buf[0..buffer.pos], SERVER)
+            .send_to(&buffer.buffer()[0..buffer.pos()], SERVER)
             .await?;
 
         let mut res_buffer = Buffer::default();
-        forwarder.recv_from(&mut res_buffer.buf).await?;
+        forwarder.recv_from(res_buffer.buffer_mut()).await?;
 
         Packet::try_from(&mut res_buffer)
+    }
+
+    async fn serve(&self, packet: Packet, address: SocketAddr) {
+        match self.forward(packet).await {
+            Ok(response_packet) => {
+                if let Err(err) = self.respond(response_packet, address).await {
+                    error!("{err:?}")
+                }
+            }
+            Err(err) => {
+                error!("{err:?}");
+            }
+        }
     }
 }

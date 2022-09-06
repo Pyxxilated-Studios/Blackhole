@@ -1,13 +1,77 @@
 pub mod packet;
 
+use core::{
+    cmp::{Ord, Ordering},
+    hash::{Hash, Hasher},
+};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use tracing::warn;
 
 use crate::dns::packet::{Buffer, IO};
 
-pub(crate) type Error = Box<dyn std::error::Error>;
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Error {
+    Io(String),
+    EndOfBuffer,
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(format!("{err}"))
+    }
+}
+
 pub(crate) type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Copy, Clone, Debug, Eq, Default)]
+pub struct Ttl(pub u32);
+
+impl From<u32> for Ttl {
+    fn from(val: u32) -> Self {
+        Ttl(val)
+    }
+}
+
+impl From<Ttl> for u32 {
+    fn from(ttl: Ttl) -> Self {
+        ttl.0
+    }
+}
+
+impl TryFrom<&mut Buffer> for Ttl {
+    type Error = Error;
+
+    fn try_from(value: &mut Buffer) -> Result<Self> {
+        Ok(Self::from(value.read::<u32>()?))
+    }
+}
+
+impl PartialEq<Ttl> for Ttl {
+    fn eq(&self, _: &Ttl) -> bool {
+        true
+    }
+}
+
+impl Ord for Ttl {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd<Ttl> for Ttl {
+    fn partial_cmp(&self, _: &Ttl) -> Option<Ordering> {
+        Some(Ordering::Equal)
+    }
+}
+
+impl Hash for Ttl {
+    fn hash<H>(&self, _: &mut H)
+    where
+        H: Hasher,
+    {
+    }
+}
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QualifiedName(pub String);
@@ -31,86 +95,52 @@ impl TryFrom<&mut Buffer> for QualifiedName {
     /// The tricky part: Reading domain names, taking labels into consideration.
     /// Will take something like [3]www[6]google[3]com[0] and append
     /// www.google.com to outstr.
-    fn try_from(packet: &mut Buffer) -> Result<QualifiedName> {
-        // Since we might encounter jumps, we'll keep track of our position
-        // locally as opposed to using the position within the struct. This
-        // allows us to move the shared position to a point past our current
-        // qname, while keeping track of our progress on the current qname
-        // using this variable.
-        let mut pos = packet.pos();
-
-        // track whether or not we've jumped
+    fn try_from(buffer: &mut Buffer) -> Result<QualifiedName> {
+        let mut pos = buffer.pos();
         let mut jumped = false;
-        let max_jumps = 5;
-        let mut jumps_performed = 0;
+        let mut outstr = String::new();
 
-        // Our delimiter which we append for each label. Since we don't want a
-        // dot at the beginning of the domain name we'll leave it empty for now
-        // and set it to "." at the end of the first iteration.
         let mut delim = "";
-
-        let mut outstr = String::default();
-
         loop {
-            // Dns Packets are untrusted data, so we need to be paranoid. Someone
-            // can craft a packet with a cycle in the jump instructions. This guards
-            // against such packets.
-            if jumps_performed > max_jumps {
-                return Err(format!("Limit of {} jumps exceeded", max_jumps).into());
-            }
+            let len = buffer.get(pos)?;
 
-            // At this point, we're always at the beginning of a label. Recall
-            // that labels start with a length byte.
-            let len = packet.get(pos)?;
-
-            // If len has the two most significant bits set, it represents a
-            // jump to some other offset in the packet:
-            if (len & 0xC0) == 0xC0 {
-                // Update the buffer position to a point past the current
-                // label. We don't need to touch it any further.
+            // A two byte sequence, where the two highest bits of the first byte is
+            // set, represents a offset relative to the start of the buffer. We
+            // handle this by jumping to the offset, setting a flag to indicate
+            // that we shouldn't update the shared buffer position once done.
+            if (len & 0xC0) > 0 {
+                // When a jump is performed, we only modify the shared buffer
+                // position once, and avoid making the change later on.
                 if !jumped {
-                    packet.seek(pos + 2);
+                    buffer.seek(pos + 2)?;
                 }
 
-                // Read another byte, calculate offset and perform the jump by
-                // updating our local position variable
-                let b2 = u16::from(packet.get(pos + 1)?);
-                let offset = ((u16::from(len) ^ 0xC0) << 8) | b2;
+                let b2 = buffer.get(pos + 1)? as u16;
+                let offset = (((len as u16) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
-
-                // Indicate that a jump was performed.
                 jumped = true;
-                jumps_performed += 1;
-            } else {
-                // The base scenario, where we're reading a single label and
-                // appending it to the output:
-
-                // Move a single byte forward to move past the length byte.
-                pos += 1;
-
-                // Domain names are terminated by an empty label of length 0,
-                // so if the length is zero we're done.
-                if len == 0 {
-                    break;
-                }
-
-                // Append the delimiter to our output buffer first.
-                outstr.push_str(delim);
-
-                // Extract the actual ASCII bytes for this label and append them
-                // to the output buffer.
-                let str_buffer = packet.get_range(pos, len as usize)?;
-                outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
-
-                delim = ".";
-
-                // Move forward the full length of the label.
-                pos += len as usize;
+                continue;
             }
+
+            pos += 1;
+
+            // Names are terminated by an empty label of length 0
+            if len == 0 {
+                break;
+            }
+
+            outstr.push_str(delim);
+
+            let str_buffer = buffer.get_range(pos, len as usize)?;
+            outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
+
+            delim = ".";
+
+            pos += len as usize;
         }
 
         if !jumped {
-            packet.seek(pos);
+            buffer.seek(pos)?;
         }
 
         Ok(QualifiedName(outstr))
@@ -123,7 +153,7 @@ pub enum ResultCode {
     FORMERR = 1,
     SERVFAIL = 2,
     NXDOMAIN = 3,
-    NOTIMP = 4,
+    NOTIMPLEMENTED = 4,
     REFUSED = 5,
 }
 
@@ -139,7 +169,7 @@ impl From<u8> for ResultCode {
             1 => ResultCode::FORMERR,
             2 => ResultCode::SERVFAIL,
             3 => ResultCode::NXDOMAIN,
-            4 => ResultCode::NOTIMP,
+            4 => ResultCode::NOTIMPLEMENTED,
             5 => ResultCode::REFUSED,
             _ => ResultCode::NOERROR,
         }
@@ -152,7 +182,7 @@ impl From<ResultCode> for u8 {
             ResultCode::FORMERR => 1,
             ResultCode::SERVFAIL => 2,
             ResultCode::NXDOMAIN => 3,
-            ResultCode::NOTIMP => 4,
+            ResultCode::NOTIMPLEMENTED => 4,
             ResultCode::REFUSED => 5,
             ResultCode::NOERROR => 6,
         }
@@ -165,8 +195,12 @@ pub enum QueryType {
     A,
     NS,
     CNAME,
+    SOA,
     MX,
+    TXT,
     AAAA,
+    SRV,
+    OPT,
 }
 
 impl Default for QueryType {
@@ -182,8 +216,12 @@ impl From<QueryType> for u16 {
             QueryType::A => 1,
             QueryType::NS => 2,
             QueryType::CNAME => 5,
+            QueryType::SOA => 6,
             QueryType::MX => 15,
+            QueryType::TXT => 16,
             QueryType::AAAA => 28,
+            QueryType::SRV => 33,
+            QueryType::OPT => 41,
         }
     }
 }
@@ -194,8 +232,12 @@ impl From<u16> for QueryType {
             1 => QueryType::A,
             2 => QueryType::NS,
             5 => QueryType::CNAME,
+            6 => QueryType::SOA,
             15 => QueryType::MX,
+            16 => QueryType::TXT,
             28 => QueryType::AAAA,
+            33 => QueryType::SRV,
+            41 => QueryType::OPT,
             _ => QueryType::UNKNOWN(num),
         }
     }
@@ -239,33 +281,62 @@ pub enum Record {
         domain: QualifiedName,
         qtype: u16,
         data_len: u16,
-        ttl: u32,
+        ttl: Ttl,
     },
     A {
         domain: QualifiedName,
         addr: Ipv4Addr,
-        ttl: u32,
+        ttl: Ttl,
     },
     NS {
         domain: QualifiedName,
         host: QualifiedName,
-        ttl: u32,
+        ttl: Ttl,
     },
     CNAME {
         domain: QualifiedName,
         host: QualifiedName,
-        ttl: u32,
+        ttl: Ttl,
+    },
+    SOA {
+        domain: QualifiedName,
+        m_name: QualifiedName,
+        r_name: QualifiedName,
+        serial: u32,
+        refresh: u32,
+        retry: u32,
+        expire: u32,
+        minimum: u32,
+        ttl: Ttl,
     },
     MX {
         domain: QualifiedName,
         priority: u16,
         host: QualifiedName,
-        ttl: u32,
+        ttl: Ttl,
+    },
+    TXT {
+        domain: QualifiedName,
+        data: String,
+        ttl: Ttl,
     },
     AAAA {
         domain: QualifiedName,
         addr: Ipv6Addr,
-        ttl: u32,
+        ttl: Ttl,
+    },
+    SRV {
+        domain: QualifiedName,
+        priority: u16,
+        weight: u16,
+        port: u16,
+        host: QualifiedName,
+        ttl: Ttl,
+    },
+    OPT {
+        packet_len: u16,
+        flags: u32,
+        data: String,
     },
 }
 
@@ -283,7 +354,7 @@ impl Record {
                     .write_string(domain.into())?
                     .write(u16::from(QueryType::A))?
                     .write(1u16)?
-                    .write(ttl)?
+                    .write(ttl.0)?
                     .write(4u16)?
                     .write(u32::from(addr))?;
             }
@@ -296,7 +367,7 @@ impl Record {
                     .write_string(domain.into())?
                     .write(u16::from(QueryType::NS))?
                     .write(1u16)?
-                    .write(ttl)?;
+                    .write(ttl.0)?;
 
                 let pos = buffer.pos();
                 buffer.write(0u16)?.write_string(host.into())?;
@@ -313,7 +384,7 @@ impl Record {
                     .write_string(domain.into())?
                     .write(u16::from(QueryType::CNAME))?
                     .write(1u16)?
-                    .write(ttl)?;
+                    .write(ttl.0)?;
 
                 let pos = buffer.pos();
                 buffer.write(0u16)?.write_string(host.into())?;
@@ -331,7 +402,7 @@ impl Record {
                     .write_string(domain.into())?
                     .write(u16::from(QueryType::MX))?
                     .write(1u16)?
-                    .write(ttl)?;
+                    .write(ttl.0)?;
 
                 let pos = buffer.pos();
                 buffer.write(0u16)?;
@@ -350,10 +421,83 @@ impl Record {
                     .write_string(domain.into())?
                     .write(u16::from(QueryType::AAAA))?
                     .write(1u16)?
-                    .write(ttl)?
+                    .write(ttl.0)?
                     .write(16u16)?
                     .write(u128::from(addr))?;
             }
+            Record::SOA {
+                ref domain,
+                ref m_name,
+                ref r_name,
+                serial,
+                refresh,
+                retry,
+                expire,
+                minimum,
+                ttl,
+            } => {
+                buffer
+                    .write_string(domain.into())?
+                    .write(u16::from(QueryType::SOA))?
+                    .write(1u16)?
+                    .write(u32::from(ttl))?;
+
+                let pos = buffer.pos();
+                buffer
+                    .write(0u16)?
+                    .write_string(m_name.into())?
+                    .write_string(r_name.into())?
+                    .write(serial)?
+                    .write(refresh)?
+                    .write(retry)?
+                    .write(expire)?
+                    .write(minimum)?;
+
+                let size = buffer.pos() - (pos + 2);
+                buffer.set(pos, size as u16)?;
+            }
+            Record::TXT {
+                ref domain,
+                ref data,
+                ttl,
+            } => {
+                buffer
+                    .write_string(domain.into())?
+                    .write(u16::from(QueryType::TXT))?
+                    .write(1u16)?
+                    .write(u32::from(ttl))?
+                    .write(data.len() as u16)?;
+
+                for b in data.as_bytes() {
+                    buffer.write(*b)?;
+                }
+            }
+            Record::SRV {
+                ref domain,
+                priority,
+                weight,
+                port,
+                ref host,
+                ttl,
+            } => {
+                buffer
+                    .write_string(domain.into())?
+                    .write(u16::from(QueryType::SRV))?
+                    .write(1u16)?
+                    .write(u32::from(ttl))?;
+
+                let pos = buffer.pos();
+                buffer
+                    .write(0u16)?
+                    .write(priority)?
+                    .write(weight)?
+                    .write(port)?
+                    .write_string(host.into())?;
+
+                let size = buffer.pos() - (pos + 2);
+                buffer.set(pos, size as u16)?;
+            }
+            Record::OPT { .. } => {}
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);
             }
@@ -369,9 +513,8 @@ impl TryFrom<&mut Buffer> for Record {
     fn try_from(buffer: &mut Buffer) -> Result<Record> {
         let domain = buffer.read()?;
 
-        let qtype_num = buffer.read()?;
-        let qtype = QueryType::from(qtype_num);
-        let _ = buffer.read::<u16>()?;
+        let qtype = buffer.read::<u16>()?.into();
+        let class = buffer.read()?;
         let ttl = buffer.read()?;
         let data_len = buffer.read()?;
 
@@ -407,12 +550,70 @@ impl TryFrom<&mut Buffer> for Record {
                     ttl,
                 })
             }
+            QueryType::SOA => {
+                let priority = buffer.read()?;
+                let weight = buffer.read()?;
+                let port = buffer.read()?;
+                let host = buffer.read()?;
+
+                Ok(Record::SRV {
+                    domain,
+                    priority,
+                    weight,
+                    port,
+                    host,
+                    ttl,
+                })
+            }
+            QueryType::TXT => {
+                let mut data = String::new();
+
+                let cur_pos = buffer.pos();
+                data.push_str(&String::from_utf8_lossy(
+                    buffer.get_range(cur_pos, data_len as usize)?,
+                ));
+
+                buffer.step(data_len as usize)?;
+
+                Ok(Record::TXT { domain, data, ttl })
+            }
+            QueryType::SRV => {
+                let priority = buffer.read()?;
+                let weight = buffer.read()?;
+                let port = buffer.read()?;
+
+                let host = buffer.read()?;
+
+                Ok(Record::SRV {
+                    domain,
+                    priority,
+                    weight,
+                    port,
+                    host,
+                    ttl,
+                })
+            }
+            QueryType::OPT => {
+                let mut data = String::new();
+
+                let cur_pos = buffer.pos();
+                data.push_str(&String::from_utf8_lossy(
+                    buffer.get_range(cur_pos, data_len as usize)?,
+                ));
+                buffer.step(data_len as usize)?;
+
+                Ok(Record::OPT {
+                    packet_len: class,
+                    flags: ttl.into(),
+                    data,
+                })
+            }
             QueryType::UNKNOWN(_) => {
-                buffer.step(data_len as usize);
+                buffer.step(data_len as usize)?;
 
                 Ok(Record::UNKNOWN {
                     domain,
-                    qtype: qtype_num,
+                    qtype: qtype.into(),
                     data_len,
                     ttl,
                 })
