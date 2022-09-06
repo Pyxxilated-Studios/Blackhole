@@ -10,7 +10,7 @@ pub(crate) type Error = Box<dyn std::error::Error>;
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct QualifiedName(String);
+pub struct QualifiedName(pub String);
 
 impl QualifiedName {
     pub fn name(&self) -> String {

@@ -11,10 +11,15 @@ path = "lib/src.rs"
 name = "blackhole"
 path = "src/main.rs"
 
+[[bench]]
+name = "benchmarks"
+harness = false
+
 [dependencies]
 console-subscriber = "0.1"
+criterion = { version = "0.3", features = [ "real_blackbox" ] }
 num = "0.4"
-opentelemetry = { version = "0.17", features = ["rt-tokio"] }
+opentelemetry = { version = "0.17", features = [ "rt-tokio" ] }
 serde_json = "1"
 tokio = { version = "1", features = [ "full", "tracing" ] }
 tracing = "0.1"
