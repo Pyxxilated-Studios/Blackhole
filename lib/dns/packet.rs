@@ -9,12 +9,7 @@ pub trait WriteTo<'a, T> {
     /// Write an element (or series thereof) to an output.
     ///
     /// This is intended to be used for Buffers (or their variants),
-    /// where it is nice to chain writes, i.e.
-    ///
-    /// ```
-    /// let buffer = Buffer::default();
-    /// buffer.write(1u16)?.write(0u16)
-    /// ```
+    /// where it is nice to chain writes.
     ///
     /// # Errors
     /// This could fail for many reasons, this simplest being that
