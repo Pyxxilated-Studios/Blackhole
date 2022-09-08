@@ -1,8 +1,9 @@
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::Arc,
 };
 
+use blackhole::server::udp;
 use tracing::{error, metadata::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
@@ -22,7 +23,12 @@ fn enable_tracing() {
             .pretty()
             .with_file(false)
             .with_line_number(false)
-            .with_env_filter(EnvFilter::from_env("LOG_LEVEL"))
+            .with_env_filter(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .with_env_var("LOG_LEVEL")
+                    .from_env_lossy(),
+            )
             .init();
     }
 }
@@ -31,8 +37,8 @@ fn enable_tracing() {
 async fn main() {
     enable_tracing();
 
-    // let listener = TcpListener::bind("0.0.0.0:6379").await?;
-    let udp_server = match blackhole::server::udp::Server::builder()
+    // let listener = TcpListener::bind("0.0.0.0:0379").await?;
+    let udp_v4_server = match udp::Server::builder()
         .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
         .on(6379)
         .build()
@@ -45,11 +51,25 @@ async fn main() {
         }
     };
 
+    let udp_v6_server = match udp::Server::builder()
+        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
+        .on(6379)
+        .build()
+        .await
+    {
+        Ok(server) => Arc::new(server),
+        Err(err) => {
+            error!("{err:?}");
+            return;
+        }
+    };
+
     let api_server = blackhole::api::server::Server::with_context(blackhole::api::Context {
-        server: udp_server.clone(),
+        server: udp_v4_server.clone(),
     });
 
-    let udp_server = tokio::spawn(async move { udp_server.run().await });
+    let udp_v4_server = tokio::spawn(async move { udp_v4_server.run().await });
+    let udp_v6_server = tokio::spawn(async move { udp_v6_server.run().await });
 
     let api_server = tokio::spawn(async move { api_server.run().await });
 
@@ -62,5 +82,5 @@ async fn main() {
         // }
     });
 
-    let _ = tokio::join!(udp_server, api_server);
+    let _joins = tokio::join!(udp_v4_server, udp_v6_server, api_server);
 }

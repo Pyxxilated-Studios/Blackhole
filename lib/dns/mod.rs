@@ -6,23 +6,23 @@ use core::{
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use thiserror::Error;
 use tracing::warn;
 
-use crate::dns::packet::{Buffer, IO};
+use crate::dns::{
+    self,
+    packet::{Buffer, WriteTo, IO},
+};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Error {
-    Io(String),
+#[derive(Debug, Error)]
+pub enum DNSError {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("End of Buffer")]
     EndOfBuffer,
 }
 
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::Io(format!("{err}"))
-    }
-}
-
-pub(crate) type Result<T> = std::result::Result<T, Error>;
+pub(crate) type Result<T> = std::result::Result<T, DNSError>;
 
 #[derive(Copy, Clone, Debug, Eq, Default)]
 pub struct Ttl(pub u32);
@@ -40,7 +40,7 @@ impl From<Ttl> for u32 {
 }
 
 impl TryFrom<&mut Buffer> for Ttl {
-    type Error = Error;
+    type Error = DNSError;
 
     fn try_from(value: &mut Buffer) -> Result<Self> {
         Ok(Self::from(value.read::<u32>()?))
@@ -82,6 +82,22 @@ impl QualifiedName {
     }
 }
 
+impl<'a> WriteTo<'a, Buffer> for &dns::QualifiedName {
+    fn write_to(&self, out: &'a mut Buffer) -> Result<&'a mut Buffer> {
+        self.name()
+            .split('.')
+            .try_fold(out, |buffer, label| {
+                let len = label.len();
+                if len > 0x3f {
+                    Err(DNSError::EndOfBuffer)
+                } else {
+                    buffer.write(len as u8)?.write(label.as_bytes())
+                }
+            })?
+            .write(0u8)
+    }
+}
+
 impl<'a> From<&'a QualifiedName> for &'a str {
     fn from(qn: &'a QualifiedName) -> Self {
         &qn.0
@@ -89,7 +105,8 @@ impl<'a> From<&'a QualifiedName> for &'a str {
 }
 
 impl TryFrom<&mut Buffer> for QualifiedName {
-    type Error = Error;
+    type Error = DNSError;
+
     /// Read a qname
     ///
     /// The tricky part: Reading domain names, taking labels into consideration.
@@ -115,8 +132,8 @@ impl TryFrom<&mut Buffer> for QualifiedName {
                     buffer.seek(pos + 2)?;
                 }
 
-                let b2 = buffer.get(pos + 1)? as u16;
-                let offset = (((len as u16) ^ 0xC0) << 8) | b2;
+                let b2 = u16::from(buffer.get(pos + 1)?);
+                let offset = ((u16::from(len) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
                 jumped = true;
                 continue;
@@ -249,19 +266,17 @@ pub struct Question {
     pub qtype: QueryType,
 }
 
-impl Question {
-    pub(crate) fn write(&self, buffer: &mut Buffer) -> Result<()> {
-        buffer.write_string((&self.name).into())?;
-
-        buffer.write_bytes(&u16::from(self.qtype).to_be_bytes())?;
-        buffer.write_bytes(&1u16.to_be_bytes())?;
-
-        Ok(())
+impl<'a> WriteTo<'a, Buffer> for Question {
+    fn write_to(&self, out: &'a mut Buffer) -> Result<&'a mut Buffer> {
+        out.write(&self.name)?
+            .write(&u16::from(self.qtype).to_be_bytes())?
+            .write(&1u16.to_be_bytes())
     }
 }
 
 impl TryFrom<&mut Buffer> for Question {
-    type Error = Error;
+    type Error = DNSError;
+
     fn try_from(buffer: &mut Buffer) -> Result<Self> {
         let question = Question {
             name: buffer.read::<QualifiedName>()?,
@@ -340,10 +355,9 @@ pub enum Record {
     },
 }
 
-impl Record {
-    pub(crate) fn write(&self, buffer: &mut Buffer) -> Result<usize> {
-        let start_pos = buffer.pos();
-
+impl<'a> WriteTo<'a, Buffer> for Record {
+    #[allow(clippy::too_many_lines)]
+    fn write_to(&self, buffer: &'a mut Buffer) -> Result<&'a mut Buffer> {
         match *self {
             Record::A {
                 ref domain,
@@ -351,7 +365,7 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::A))?
                     .write(1u16)?
                     .write(ttl.0)?
@@ -364,13 +378,13 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::NS))?
                     .write(1u16)?
                     .write(ttl.0)?;
 
                 let pos = buffer.pos();
-                buffer.write(0u16)?.write_string(host.into())?;
+                buffer.write(0u16)?.write(host)?;
 
                 let size = buffer.pos() - (pos + 2);
                 buffer.set(pos, size as u16)?;
@@ -381,13 +395,13 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::CNAME))?
                     .write(1u16)?
                     .write(ttl.0)?;
 
                 let pos = buffer.pos();
-                buffer.write(0u16)?.write_string(host.into())?;
+                buffer.write(0u16)?.write(host)?;
 
                 let size = buffer.pos() - (pos + 2);
                 buffer.set(pos, size as u16)?;
@@ -399,7 +413,7 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::MX))?
                     .write(1u16)?
                     .write(ttl.0)?;
@@ -407,7 +421,7 @@ impl Record {
                 let pos = buffer.pos();
                 buffer.write(0u16)?;
 
-                buffer.write(priority)?.write_string(host.into())?;
+                buffer.write(priority)?.write(host)?;
 
                 let size = buffer.pos() - (pos + 2);
                 buffer.set(pos, size as u16)?;
@@ -418,7 +432,7 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::AAAA))?
                     .write(1u16)?
                     .write(ttl.0)?
@@ -437,7 +451,7 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::SOA))?
                     .write(1u16)?
                     .write(u32::from(ttl))?;
@@ -445,8 +459,8 @@ impl Record {
                 let pos = buffer.pos();
                 buffer
                     .write(0u16)?
-                    .write_string(m_name.into())?
-                    .write_string(r_name.into())?
+                    .write(m_name)?
+                    .write(r_name)?
                     .write(serial)?
                     .write(refresh)?
                     .write(retry)?
@@ -462,15 +476,12 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::TXT))?
                     .write(1u16)?
                     .write(u32::from(ttl))?
-                    .write(data.len() as u16)?;
-
-                for b in data.as_bytes() {
-                    buffer.write(*b)?;
-                }
+                    .write(data.len() as u16)?
+                    .write(data.as_bytes())?;
             }
             Record::SRV {
                 ref domain,
@@ -481,7 +492,7 @@ impl Record {
                 ttl,
             } => {
                 buffer
-                    .write_string(domain.into())?
+                    .write(domain)?
                     .write(u16::from(QueryType::SRV))?
                     .write(1u16)?
                     .write(u32::from(ttl))?;
@@ -492,7 +503,7 @@ impl Record {
                     .write(priority)?
                     .write(weight)?
                     .write(port)?
-                    .write_string(host.into())?;
+                    .write(host)?;
 
                 let size = buffer.pos() - (pos + 2);
                 buffer.set(pos, size as u16)?;
@@ -503,12 +514,12 @@ impl Record {
             }
         }
 
-        Ok(buffer.pos() - start_pos)
+        Ok(buffer)
     }
 }
 
 impl TryFrom<&mut Buffer> for Record {
-    type Error = Error;
+    type Error = DNSError;
 
     fn try_from(buffer: &mut Buffer) -> Result<Record> {
         let domain = buffer.read()?;
@@ -551,27 +562,32 @@ impl TryFrom<&mut Buffer> for Record {
                 })
             }
             QueryType::SOA => {
-                let priority = buffer.read()?;
-                let weight = buffer.read()?;
-                let port = buffer.read()?;
-                let host = buffer.read()?;
+                let m_name = buffer.read()?;
 
-                Ok(Record::SRV {
+                let r_name = buffer.read()?;
+
+                let serial = buffer.read()?;
+                let refresh = buffer.read()?;
+                let retry = buffer.read()?;
+                let expire = buffer.read()?;
+                let minimum = buffer.read()?;
+
+                Ok(Record::SOA {
                     domain,
-                    priority,
-                    weight,
-                    port,
-                    host,
+                    m_name,
+                    r_name,
+                    serial,
+                    refresh,
+                    retry,
+                    expire,
+                    minimum,
                     ttl,
                 })
             }
             QueryType::TXT => {
-                let mut data = String::new();
-
                 let cur_pos = buffer.pos();
-                data.push_str(&String::from_utf8_lossy(
-                    buffer.get_range(cur_pos, data_len as usize)?,
-                ));
+                let data = String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?)
+                    .to_string();
 
                 buffer.step(data_len as usize)?;
 
@@ -594,12 +610,9 @@ impl TryFrom<&mut Buffer> for Record {
                 })
             }
             QueryType::OPT => {
-                let mut data = String::new();
-
                 let cur_pos = buffer.pos();
-                data.push_str(&String::from_utf8_lossy(
-                    buffer.get_range(cur_pos, data_len as usize)?,
-                ));
+                let data = String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?)
+                    .to_string();
                 buffer.step(data_len as usize)?;
 
                 Ok(Record::OPT {
@@ -622,6 +635,7 @@ impl TryFrom<&mut Buffer> for Record {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
     pub id: u16,
@@ -644,8 +658,8 @@ pub struct Header {
     pub resource_entries: u16,
 }
 
-impl Header {
-    pub(crate) fn write(&self, buffer: &mut Buffer) -> Result<()> {
+impl<'a> WriteTo<'a, Buffer> for Header {
+    fn write_to(&self, buffer: &'a mut Buffer) -> Result<&'a mut Buffer> {
         buffer
             .write(self.id)?
             .write(
@@ -665,14 +679,12 @@ impl Header {
             .write(self.questions)?
             .write(self.answers)?
             .write(self.authoritative_entries)?
-            .write(self.resource_entries)?;
-
-        Ok(())
+            .write(self.resource_entries)
     }
 }
 
 impl TryFrom<&mut Buffer> for Header {
-    type Error = Error;
+    type Error = DNSError;
 
     fn try_from(buffer: &mut Buffer) -> Result<Self> {
         let id = buffer.read()?;
