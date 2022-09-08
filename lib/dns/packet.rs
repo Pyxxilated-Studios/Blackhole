@@ -1,138 +1,226 @@
 use std::convert::TryFrom;
 
-use tracing::instrument;
-
-use crate::dns::{Error, Header, Question, Record, Result};
+use crate::dns::{DNSError, Header, Question, Record, Result};
 
 pub(crate) const DNS_PACKET_SIZE: usize = 512;
 
+pub trait WriteTo<'a, T> {
+    ///
+    /// Write an element (or series thereof) to an output.
+    ///
+    /// This is intended to be used for Buffers (or their variants),
+    /// where it is nice to chain writes.
+    ///
+    /// # Errors
+    /// This could fail for many reasons, this simplest being that
+    /// writing the element to the buffer caused it to overflow its
+    /// internal buffer
+    ///
+    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T>;
+}
+
 pub(crate) trait IO {
+    /// Current position within buffer
+    fn pos(&self) -> usize;
+
+    /// Step the buffer position forward a specific number of steps
+    fn step(&mut self, steps: usize) -> Result<&mut Self>;
+
+    /// Change the buffer position
+    fn seek(&mut self, pos: usize) -> Result<&mut Self>;
+
+    /// Get a single byte, without changing the buffer position
+    fn get(&mut self, pos: usize) -> Result<u8>;
+
+    /// Set a byte at a specific position
+    fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Self>
+    where
+        T: num::Unsigned + num::PrimInt;
+
+    /// Get a range of bytes
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]>;
+
     fn read<'a, T>(&'a mut self) -> Result<T>
     where
-        T: TryFrom<&'a mut Self, Error = Error> + Default;
+        T: TryFrom<&'a mut Self, Error = DNSError> + Default;
 
-    fn write<T>(&mut self, val: T) -> Result<&mut Self>
+    fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
     where
-        T: num::Unsigned + num::PrimInt + std::fmt::Debug + 'static;
+        Self: Sized,
+        T: WriteTo<'a, Self>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Buffer {
-    pub buf: [u8; DNS_PACKET_SIZE],
+    pub buffer: [u8; DNS_PACKET_SIZE],
     pub pos: usize,
 }
 
 impl Buffer {
-    /// Current position within buffer
-    pub(crate) fn pos(&self) -> usize {
-        self.pos
+    pub(crate) fn buffer(&self) -> &[u8; DNS_PACKET_SIZE] {
+        &self.buffer
     }
 
-    /// Step the buffer position forward a specific number of steps
-    pub(crate) fn step(&mut self, steps: usize) {
-        self.pos += steps;
+    pub(crate) fn buffer_mut(&mut self) -> &mut [u8; DNS_PACKET_SIZE] {
+        &mut self.buffer
     }
+}
 
-    /// Change the buffer position
-    pub(crate) fn seek(&mut self, pos: usize) {
-        self.pos = pos;
-    }
+macro_rules! impl_write {
+    ( $($t:ty),* ) => {
+        $(impl<'a> WriteTo<'a, Buffer> for $t {
+            fn write_to(&self, buffer: &'a mut Buffer) -> Result<&'a mut Buffer> {
+                if core::any::TypeId::of::<$t>() == core::any::TypeId::of::<u8>() {
+                    buffer.set(buffer.pos(), *self as u8)?;
+                    buffer.pos += 1;
 
-    pub fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Buffer>
-    where
-        T: num::Unsigned + num::PrimInt,
-    {
-        if pos >= DNS_PACKET_SIZE {
-            return Err("Position out of range".into());
-        }
-
-        let bytes = std::mem::size_of::<T>() / u8::BITS as usize;
-        (1..=bytes).for_each(|byte| {
-            self.buf[pos + byte - 1] = (val >> ((bytes - byte) * u8::BITS as usize)
-                & T::from(0xFF).unwrap())
-            .to_u8()
-            .unwrap();
-        });
-
-        Ok(self)
-    }
-
-    pub fn write_bytes(&mut self, buff: &[u8]) -> Result<&mut Buffer> {
-        buff.iter().try_fold(self, |buffer, &val| buffer.write(val))
-    }
-
-    pub fn write_string(&mut self, string: &str) -> Result<&mut Buffer> {
-        string
-            .split('.')
-            .try_fold(self, |buffer, label| {
-                let len = label.len();
-                if len > 0x3f {
-                    Err("Single label exceeds 63 characters of length".into())
+                    Ok(buffer)
                 } else {
-                    buffer.write(len as u8)?.write_bytes(label.as_bytes())
+                    let bytes = core::mem::size_of::<$t>();
+                    let val = self.to_be();
+
+                    (0..bytes).try_fold(buffer, |buffer, byte| {
+                        let v = (val >> (byte * u8::BITS as usize)) as u8 & 0xFF;
+                        (*buffer).write(v)
+                    })
                 }
-            })?
-            .write(0u8)
+            }
+        })*
     }
+}
 
-    /// Get a single byte, without changing the buffer position
-    pub(crate) fn get(&mut self, pos: usize) -> Result<u8> {
-        if pos >= DNS_PACKET_SIZE {
-            Err("End of buffer".into())
-        } else {
-            Ok(self.buf[pos])
-        }
+macro_rules! impl_try_from {
+    ( $($t:ty),* ) => {
+        $(impl TryFrom<&mut Buffer> for $t {
+            type Error = DNSError;
+
+            /// Read two bytes, stepping two steps forward
+            fn try_from(buffer: &mut Buffer) -> Result<$t> {
+                let res = <$t>::from_be_bytes(std::array::try_from_fn(|_| buffer.read())?);
+
+                Ok(res)
+            }
+        })*
     }
+}
 
-    /// Get a range of bytes
-    pub(crate) fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
-        if start + len >= DNS_PACKET_SIZE {
-            Err("End of buffer".into())
-        } else {
-            Ok(&self.buf[start..start + len as usize])
-        }
+impl TryFrom<&mut Buffer> for u8 {
+    type Error = DNSError;
+
+    fn try_from(buffer: &mut Buffer) -> Result<u8> {
+        let res = buffer.get(buffer.pos())?;
+        buffer.pos += 1;
+
+        Ok(res)
+    }
+}
+
+impl_write!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize);
+impl_try_from!(i8, u16, i16, u32, i32, u64, i64, u128, i128, usize);
+
+impl<'a> WriteTo<'a, Buffer> for &[u8] {
+    fn write_to(&self, out: &'a mut Buffer) -> Result<&'a mut Buffer> {
+        self.iter().try_fold(out, |buffer, &val| buffer.write(val))
+    }
+}
+
+impl<'a, const N: usize> WriteTo<'a, Buffer> for &[u8; N] {
+    fn write_to(&self, out: &'a mut Buffer) -> Result<&'a mut Buffer> {
+        self.iter().try_fold(out, |buffer, &val| buffer.write(val))
+    }
+}
+
+impl<'a, T> WriteTo<'a, Buffer> for Vec<T>
+where
+    T: WriteTo<'a, Buffer> + Clone,
+{
+    fn write_to(&self, out: &'a mut Buffer) -> Result<&'a mut Buffer> {
+        self.iter()
+            .try_fold(out, |buffer, val| buffer.write(val.clone()))
     }
 }
 
 impl IO for Buffer {
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    fn step(&mut self, steps: usize) -> Result<&mut Buffer> {
+        if self.pos + steps >= DNS_PACKET_SIZE {
+            Err(DNSError::EndOfBuffer)
+        } else {
+            self.pos += steps;
+            Ok(self)
+        }
+    }
+
+    fn seek(&mut self, pos: usize) -> Result<&mut Buffer> {
+        if pos >= DNS_PACKET_SIZE {
+            Err(DNSError::EndOfBuffer)
+        } else {
+            self.pos = pos;
+            Ok(self)
+        }
+    }
+
+    fn get(&mut self, pos: usize) -> Result<u8> {
+        if pos >= DNS_PACKET_SIZE {
+            Err(DNSError::EndOfBuffer)
+        } else {
+            Ok(self.buffer[pos])
+        }
+    }
+
+    fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Buffer>
+    where
+        T: num::Unsigned + num::PrimInt,
+    {
+        if pos >= DNS_PACKET_SIZE {
+            return Err(DNSError::EndOfBuffer);
+        }
+
+        let bytes = std::mem::size_of::<T>();
+
+        if bytes == 1 {
+            self.buffer[pos] = val.to_u8().unwrap();
+        } else {
+            (1..=bytes).for_each(|byte| {
+                self.buffer[pos + byte - 1] = (val >> ((bytes - byte) * u8::BITS as usize)
+                    & T::from(0xFF).unwrap())
+                .to_u8()
+                .unwrap();
+            });
+        }
+
+        Ok(self)
+    }
+
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        if start + len >= DNS_PACKET_SIZE {
+            Err(DNSError::EndOfBuffer)
+        } else {
+            Ok(&self.buffer[start..start + len as usize])
+        }
+    }
+
     fn read<'a, T>(&'a mut self) -> Result<T>
     where
-        T: TryFrom<&'a mut Self, Error = Error> + Default,
+        T: TryFrom<&'a mut Self, Error = DNSError> + Default,
     {
         T::try_from(self)
     }
 
-    fn write<T>(&mut self, val: T) -> Result<&mut Buffer>
+    fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
     where
-        T: num::Unsigned + num::PrimInt + std::fmt::Debug + 'static,
+        T: WriteTo<'a, Self>,
     {
-        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<u8>() {
-            if self.pos >= DNS_PACKET_SIZE {
-                Err("End of buffer".into())
-            } else {
-                self.buf[self.pos] = val.to_u8().unwrap();
-                self.pos += 1;
-
-                Ok(self)
-            }
-        } else {
-            let bytes = core::mem::size_of::<T>();
-            let val = val.to_be();
-
-            (0..bytes).try_fold(self, |buffer, byte| {
-                let v = (val >> (byte * u8::BITS as usize) & T::from(0xFF).unwrap())
-                    .to_u8()
-                    .unwrap();
-                buffer.write(v)
-            })
-        }
+        val.write_to(self)
     }
 }
 
 impl TryFrom<Packet> for Buffer {
-    type Error = Error;
+    type Error = DNSError;
 
-    #[instrument]
     fn try_from(mut packet: Packet) -> Result<Self> {
         let mut buffer = Buffer::default();
         packet.header.questions = packet.questions.len() as u16;
@@ -140,91 +228,21 @@ impl TryFrom<Packet> for Buffer {
         packet.header.authoritative_entries = packet.authorities.len() as u16;
         packet.header.resource_entries = packet.resources.len() as u16;
 
-        packet.header.write(&mut buffer)?;
-
-        for question in &packet.questions {
-            question.write(&mut buffer)?;
-        }
-
-        for rec in &packet.answers {
-            rec.write(&mut buffer)?;
-        }
-
-        for rec in &packet.authorities {
-            rec.write(&mut buffer)?;
-        }
-
-        for rec in &packet.resources {
-            rec.write(&mut buffer)?;
-        }
+        buffer
+            .write(packet.header)?
+            .write(packet.questions)?
+            .write(packet.answers)?
+            .write(packet.authorities)?
+            .write(packet.resources)?;
 
         Ok(buffer)
-    }
-}
-
-impl TryFrom<&mut Buffer> for u8 {
-    type Error = Error;
-
-    fn try_from(packet: &mut Buffer) -> Result<u8> {
-        if packet.pos >= DNS_PACKET_SIZE {
-            Err("End of buffer".into())
-        } else {
-            let res = packet.buf[packet.pos];
-            packet.pos += 1;
-
-            Ok(res)
-        }
-    }
-}
-
-impl TryFrom<&mut Buffer> for u16 {
-    type Error = Error;
-
-    /// Read two bytes, stepping two steps forward
-    fn try_from(packet: &mut Buffer) -> Result<u16> {
-        let res = u16::from_be_bytes(std::array::try_from_fn(|_| packet.read::<u8>())?);
-
-        Ok(res)
-    }
-}
-
-impl TryFrom<&mut Buffer> for u32 {
-    type Error = Error;
-
-    /// Read four bytes, stepping four steps forward
-    fn try_from(packet: &mut Buffer) -> Result<u32> {
-        let res = u32::from_be_bytes(std::array::try_from_fn(|_| packet.read::<u8>())?);
-
-        Ok(res)
-    }
-}
-
-impl TryFrom<&mut Buffer> for u64 {
-    type Error = Error;
-
-    /// Read four bytes, stepping four steps forward
-    fn try_from(packet: &mut Buffer) -> Result<u64> {
-        let res = u64::from_be_bytes(std::array::try_from_fn(|_| packet.read::<u8>())?);
-
-        Ok(res)
-    }
-}
-
-impl TryFrom<&mut Buffer> for u128 {
-    type Error = Error;
-
-    /// Read four bytes, stepping four steps forward
-    fn try_from(packet: &mut Buffer) -> Result<u128> {
-        let res = u128::from_be_bytes(std::array::try_from_fn(|_| packet.read::<u8>())?);
-
-        Ok(res)
     }
 }
 
 impl Default for Buffer {
     fn default() -> Self {
         Buffer {
-            buf: [0; DNS_PACKET_SIZE],
+            buffer: [0; DNS_PACKET_SIZE],
             pos: 0,
         }
     }
@@ -240,41 +258,42 @@ pub struct Packet {
 }
 
 impl TryFrom<&mut Buffer> for Packet {
-    type Error = Error;
+    type Error = DNSError;
 
-    #[instrument]
     fn try_from(buffer: &mut Buffer) -> Result<Packet> {
-        buffer.seek(0);
+        buffer.seek(0)?;
+        let header = Header::try_from(&mut *buffer)?;
 
-        let mut result = Packet {
-            header: Header::try_from(&mut *buffer)?,
-            ..Default::default()
+        let questions = header.questions;
+        let answers = header.answers;
+        let authorities = header.authoritative_entries;
+        let resources = header.resource_entries;
+
+        let result = Packet {
+            header,
+            questions: (0..questions)
+                .filter_map(|_| Question::try_from(&mut *buffer).ok())
+                .collect(),
+            answers: (0..answers)
+                .filter_map(|_| Record::try_from(&mut *buffer).ok())
+                .collect(),
+            authorities: (0..authorities)
+                .filter_map(|_| Record::try_from(&mut *buffer).ok())
+                .collect(),
+            resources: (0..resources)
+                .filter_map(|_| Record::try_from(&mut *buffer).ok())
+                .collect(),
         };
-
-        result.questions = (0..result.header.questions)
-            .filter_map(|_| Question::try_from(&mut *buffer).ok())
-            .collect();
-
-        result.answers = (0..result.header.answers)
-            .filter_map(|_| Record::try_from(&mut *buffer).ok())
-            .collect();
-
-        result.authorities = (0..result.header.authoritative_entries)
-            .filter_map(|_| Record::try_from(&mut *buffer).ok())
-            .collect();
-
-        result.resources = (0..result.header.resource_entries)
-            .filter_map(|_| Record::try_from(&mut *buffer).ok())
-            .collect();
 
         Ok(result)
     }
 }
 
+#[allow(unused_imports)]
 mod test {
     use crate::dns::{
         packet::{Buffer, Packet},
-        Header, QualifiedName, QueryType, Question, Record, ResultCode,
+        Header, QualifiedName, QueryType, Question, Record, ResultCode, Ttl,
     };
 
     #[test]
@@ -306,13 +325,13 @@ mod test {
                     domain: QualifiedName("example.com".to_owned()),
                     priority: 10,
                     host: QualifiedName("mail.example.com".to_owned()),
-                    ttl: 3600,
+                    ttl: Ttl(3600),
                 },
                 Record::MX {
                     domain: QualifiedName("example.com".to_owned()),
                     priority: 20,
                     host: QualifiedName("mailsec.example.com".to_owned()),
-                    ttl: 3600,
+                    ttl: Ttl(3600),
                 },
             ],
             authorities: vec![],

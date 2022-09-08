@@ -18,6 +18,8 @@ WORKDIR /blackhole
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 RUN mkdir lib
+RUN mkdir benches
+RUN touch benches/benchmarks.rs
 RUN touch lib/src.rs
 RUN cargo build --release
 
@@ -33,8 +35,8 @@ FROM node:18-buster-slim
 
 WORKDIR /blackhole
 
-COPY --from=client /blackhole/target/release/blackhole .
-COPY --from=server /client/build .
+COPY --from=server /blackhole/target/release/blackhole .
+COPY --from=client /client/build .
 COPY ./client/package.json .
 
 COPY ./entrypoint.sh .
