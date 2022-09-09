@@ -1,6 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import type { UserConfig } from 'vite';
-import { uglify } from 'rollup-plugin-uglify';
 
 const config: UserConfig = {
 	plugins: [sveltekit()],
@@ -11,8 +10,7 @@ const config: UserConfig = {
 	},
 	build: {
 		rollupOptions: {
-			treeshake: 'recommended',
-			plugins: [uglify()]
+			treeshake: 'recommended'
 		}
 	}
 };
