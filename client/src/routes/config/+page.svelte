@@ -1,35 +1,3 @@
-<script lang="ts">
-	import { page } from '$app/stores';
-
-	type Requests = [string, number][];
-
-	export let data: { requests: Requests; refetch: () => Promise<Requests> };
-
-	const refetch = async () => {
-		try {
-			const resp = await fetch(`${$page.url.origin}/api/requests`);
-			const json = await resp.json();
-			data.requests = json;
-			error = undefined;
-		} catch (err: any) {
-			error = err;
-		}
-	};
-
-	let error: string | undefined = undefined;
-
-	setInterval(refetch, 30000);
-	refetch();
-</script>
-
-{#if data.requests}
-	{#each Array.from(data.requests) as entry}
-		<p>{entry[0]}: {entry[1]}</p>
-	{/each}
-{:else if error}
-	<p>Error: {error}</p>
-{/if}
-
 <p>
 	Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis leo orci, porttitor congue enim eu,
 	ultricies aliquet sapien. Sed molestie, est non tincidunt dignissim, sem diam dapibus sem,
