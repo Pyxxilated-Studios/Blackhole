@@ -8,7 +8,8 @@ use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument};
 
 use crate::dns::{
-    packet::{Buffer, Packet, IO},
+    packet::{Buffer, Packet},
+    traits::IO,
     Result, ResultCode,
 };
 

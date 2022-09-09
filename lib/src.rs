@@ -1,5 +1,5 @@
 #![feature(array_try_from_fn)]
-#![feature(associated_type_bounds)]
+#![feature(associated_type_defaults)]
 #![feature(async_closure)]
 #![feature(min_specialization)]
 
