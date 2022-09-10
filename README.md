@@ -1,5 +1,8 @@
 # Blackhole
 
+[![Tests](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml/badge.svg)](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml)
+[![Docker Image CI](https://github.com/Pyxxil/Blackhole/actions/workflows/build.yml/badge.svg)](https://github.com/Pyxxil/Blackhole/actions/workflows/build.yml)
+
 A DNS filtering and blocking server and client
 
 ## Roadmap

@@ -12,4 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag blackhole:$(git describe --tags --abbrev=0)
+      run: docker build . --file Dockerfile --tag blackhole:latest
+      # Would prefer to use the following, or something like it, however it's not working atm
+      # run: docker build . --file Dockerfile --tag blackhole:$(git describe --tags --abbrev=0)
