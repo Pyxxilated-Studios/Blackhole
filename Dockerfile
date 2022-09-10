@@ -1,4 +1,4 @@
-FROM node:slim as client
+FROM node:buster-slim as client
 
 WORKDIR /client
 
@@ -33,7 +33,7 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM node:slim
+FROM node:buster-slim
 
 RUN apt update && apt install -y dnsutils
 
