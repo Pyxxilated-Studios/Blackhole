@@ -40,7 +40,7 @@ async fn main() {
     // let listener = TcpListener::bind("0.0.0.0:0379").await?;
     let udp_v4_server = match udp::Server::builder()
         .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-        .on(6379)
+        .on(6380)
         .build()
         .await
     {
@@ -64,14 +64,10 @@ async fn main() {
         }
     };
 
-    let api_server = blackhole::api::server::Server::with_context(blackhole::api::Context {
-        server: udp_v4_server.clone(),
-    });
-
     let udp_v4_server = tokio::spawn(async move { udp_v4_server.run().await });
     let udp_v6_server = tokio::spawn(async move { udp_v6_server.run().await });
 
-    let api_server = tokio::spawn(async move { api_server.run().await });
+    let api_server = tokio::spawn(async move { blackhole::api::server::Server.run().await });
 
     tokio::spawn(async move {
         // while let Ok((mut stream, _peer)) = listener.accept().await {

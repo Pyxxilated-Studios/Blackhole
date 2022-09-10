@@ -1,6 +1,9 @@
 use blackhole::dns::{
+    header::Header,
     packet::{Buffer, Packet},
-    Header, QualifiedName, QueryType, Question, Record, ResultCode,
+    qualified_name::QualifiedName,
+    question::Question,
+    QueryType, Record, ResultCode,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 

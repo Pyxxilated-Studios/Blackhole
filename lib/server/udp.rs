@@ -1,15 +1,21 @@
 use std::{
-    collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Instant,
 };
 
+use chrono::Utc;
 use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument};
 
-use crate::dns::{
-    packet::{Buffer, Packet, IO},
-    Result, ResultCode,
+use crate::{
+    dns::{
+        packet::{Buffer, Packet},
+        question::Question,
+        traits::IO,
+        Record, Result, ResultCode,
+    },
+    statistics::{Statistic, STATS},
 };
 
 pub struct ServerBuilder {
@@ -40,7 +46,6 @@ impl ServerBuilder {
         let address = (self.addr, self.port).into();
         Ok(Server {
             socket: Arc::new(RwLock::new(UdpSocket::bind(address).await?)),
-            requests: Arc::new(RwLock::new(HashMap::new())),
             address,
         })
     }
@@ -50,7 +55,6 @@ impl ServerBuilder {
 pub struct Server {
     socket: Arc<RwLock<UdpSocket>>,
     address: SocketAddr,
-    requests: Arc<RwLock<HashMap<String, usize>>>,
 }
 
 impl Server {
@@ -59,10 +63,6 @@ impl Server {
             port: 53,
             addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         }
-    }
-
-    pub fn requests(&self) -> &Arc<RwLock<HashMap<String, usize>>> {
-        &self.requests
     }
 
     #[instrument(skip(self),
@@ -74,26 +74,17 @@ impl Server {
         info!("listening on {}", self.socket.read().await.local_addr()?);
 
         while let Ok((packet, address)) = self.receive().await {
-            let server = self.clone();
+            let socket = self.socket.clone();
 
             tokio::spawn(async move {
-                for question in packet.clone().questions {
-                    *server
-                        .requests
-                        .write()
-                        .await
-                        .entry(question.name.name())
-                        .or_default() += 1;
-                }
-
-                server.serve(packet, address).await;
+                Handler::serve(socket, packet, address).await;
             });
         }
 
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument()]
     async fn receive(&self) -> Result<(Packet, SocketAddr)> {
         let mut buffer = Buffer::default();
 
@@ -107,9 +98,25 @@ impl Server {
 
         Ok((Packet::try_from(&mut buffer)?, address))
     }
+}
 
-    #[instrument(skip(self, packet, address))]
-    async fn respond(&self, mut packet: Packet, address: SocketAddr) -> Result<()> {
+#[derive(Default)]
+struct Handler {
+    client: String,
+    question: Question,
+    answers: Vec<Record>,
+    status: ResultCode,
+    elapsed: usize,
+}
+
+impl Handler {
+    #[instrument(skip(self, socket, packet, address))]
+    async fn respond(
+        &mut self,
+        socket: &Arc<RwLock<UdpSocket>>,
+        mut packet: Packet,
+        address: SocketAddr,
+    ) -> Result<()> {
         let buffer = Buffer::try_from(packet.clone()).or_else(|err| {
             error!("{err:?}");
 
@@ -121,21 +128,29 @@ impl Server {
             packet.authorities = vec![];
             packet.resources = vec![];
 
-            Buffer::try_from(packet)
+            Buffer::try_from(packet.clone())
         })?;
 
-        self.socket.read().await.writable().await?;
-        self.socket
+        socket.read().await.writable().await?;
+        socket
             .read()
             .await
             .send_to(&buffer.buffer()[..buffer.pos()], address)
             .await?;
 
+        self.status = packet.header.rescode;
+        self.answers = packet.answers;
+
         Ok(())
     }
 
-    #[instrument(skip(self, address))]
-    async fn respond_error(&self, address: SocketAddr, id: u16) {
+    #[instrument(skip(self, socket, address))]
+    async fn respond_error(
+        &mut self,
+        socket: &Arc<RwLock<UdpSocket>>,
+        address: SocketAddr,
+        id: u16,
+    ) {
         let mut packet = Packet::default();
         packet.header.id = id;
         packet.header.rescode = ResultCode::SERVFAIL;
@@ -146,6 +161,8 @@ impl Server {
         packet.authorities = vec![];
         packet.resources = vec![];
 
+        self.status = packet.header.rescode;
+
         let buffer = match Buffer::try_from(packet) {
             Ok(buffer) => buffer,
             Err(err) => {
@@ -154,13 +171,12 @@ impl Server {
             }
         };
 
-        if let Err(err) = self.socket.read().await.writable().await {
+        if let Err(err) = socket.read().await.writable().await {
             error!("{err:?}");
             return;
         }
 
-        if let Err(err) = self
-            .socket
+        if let Err(err) = socket
             .read()
             .await
             .send_to(&buffer.buffer()[..buffer.pos()], address)
@@ -171,9 +187,11 @@ impl Server {
     }
 
     #[instrument(skip(self, packet))]
-    async fn forward(&self, packet: Packet) -> Result<Packet> {
+    async fn forward(&mut self, packet: Packet) -> Result<Packet> {
         const SERVER: (&str, u16) = ("192.168.1.123", 53);
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 43210)).await?;
+
+        self.question = packet.questions[0].clone();
 
         let buffer = Buffer::try_from(packet)?;
 
@@ -187,26 +205,45 @@ impl Server {
         Packet::try_from(&mut res_buffer)
     }
 
-    #[instrument(skip(self, packet, address),
-        fields(
-            addr = %self.address
-        )
-    )]
-    async fn serve(&self, packet: Packet, address: SocketAddr) {
+    async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
+        let mut handler = Handler {
+            client: address.ip().to_string(),
+            ..Default::default()
+        };
+
         let id = packet.header.id;
-        match self.forward(packet).await {
+
+        let start = Instant::now();
+        match handler.forward(packet).await {
             Ok(response_packet) => {
                 let id = response_packet.header.id;
 
-                if let Err(err) = self.respond(response_packet, address).await {
+                if let Err(err) = handler.respond(&socket, response_packet, address).await {
                     error!("{err:?}");
-                    self.respond_error(address, id).await;
+                    handler.respond_error(&socket, address, id).await;
                 }
             }
             Err(err) => {
                 error!("{err:?}");
-                self.respond_error(address, id).await;
+                handler.respond_error(&socket, address, id).await;
             }
+        }
+
+        handler.elapsed = start.elapsed().as_nanos() as usize;
+
+        STATS.write().await.record(handler);
+    }
+}
+
+impl From<Handler> for Statistic {
+    fn from(handler: Handler) -> Self {
+        Statistic {
+            client: handler.client,
+            question: handler.question,
+            answers: handler.answers,
+            status: handler.status,
+            elapsed: handler.elapsed,
+            timestamp: Utc::now(),
         }
     }
 }
