@@ -9,7 +9,14 @@ const config: UserConfig = {
 		}
 	},
 	build: {
+		cssCodeSplit: false,
+		reportCompressedSize: false,
 		rollupOptions: {
+			output: {
+				generatedCode: {
+					objectShorthand: true
+				}
+			},
 			treeshake: 'recommended'
 		}
 	}

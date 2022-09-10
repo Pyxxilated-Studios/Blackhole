@@ -10,6 +10,7 @@ use core::{
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use serde::Serialize;
 use thiserror::Error;
 use tracing::warn;
 
@@ -29,7 +30,7 @@ pub enum DNSError {
 
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;
 
-#[derive(Copy, Clone, Debug, Eq, Default)]
+#[derive(Copy, Clone, Debug, Eq, Default, Serialize)]
 pub struct Ttl(pub u32);
 
 impl From<u32> for Ttl {
@@ -84,7 +85,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Ttl {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum ResultCode {
     NOERROR = 0,
     FORMERR = 1,
@@ -126,7 +127,7 @@ impl From<ResultCode> for u8 {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy, PartialOrd, Ord, Serialize)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,
@@ -186,7 +187,7 @@ impl<'a, T: IO> WriteTo<'a, T> for QueryType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[allow(dead_code)]
 pub enum Record {
     UNKNOWN {
@@ -252,17 +253,33 @@ pub enum Record {
     },
 }
 
+impl Record {
+    pub fn domain(&self) -> Option<&String> {
+        match self {
+            Record::UNKNOWN { domain, .. }
+            | Record::A { domain, .. }
+            | Record::NS { domain, .. }
+            | Record::CNAME { domain, .. }
+            | Record::SOA { domain, .. }
+            | Record::MX { domain, .. }
+            | Record::TXT { domain, .. }
+            | Record::AAAA { domain, .. }
+            | Record::SRV { domain, .. } => Some(&domain.0),
+            Record::OPT { .. } => None,
+        }
+    }
+}
+
 impl<'a, T: IO> WriteTo<'a, T> for Record {
     #[allow(clippy::too_many_lines)]
-    fn write_to(&self, buffer: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         match *self {
             Record::A {
                 ref domain,
                 addr,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::A)?
                     .write(1u16)?
                     .write(ttl.0)?
@@ -274,34 +291,32 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref host,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::NS)?
                     .write(1u16)?
                     .write(ttl.0)?;
 
-                let pos = buffer.pos();
-                buffer.write(0u16)?.write(host)?;
+                let pos = out.pos();
+                out.write(0u16)?.write(host)?;
 
-                let size = buffer.pos() - (pos + 2);
-                buffer.set(pos, size as u16)?;
+                let size = out.pos() - (pos + 2);
+                out.set(pos, size as u16)?;
             }
             Record::CNAME {
                 ref domain,
                 ref host,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::CNAME)?
                     .write(1u16)?
                     .write(ttl.0)?;
 
-                let pos = buffer.pos();
-                buffer.write(0u16)?.write(host)?;
+                let pos = out.pos();
+                out.write(0u16)?.write(host)?;
 
-                let size = buffer.pos() - (pos + 2);
-                buffer.set(pos, size as u16)?;
+                let size = out.pos() - (pos + 2);
+                out.set(pos, size as u16)?;
             }
             Record::MX {
                 ref domain,
@@ -309,27 +324,25 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref host,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::MX)?
                     .write(1u16)?
                     .write(ttl.0)?;
 
-                let pos = buffer.pos();
-                buffer.write(0u16)?;
+                let pos = out.pos();
+                out.write(0u16)?;
 
-                buffer.write(priority)?.write(host)?;
+                out.write(priority)?.write(host)?;
 
-                let size = buffer.pos() - (pos + 2);
-                buffer.set(pos, size as u16)?;
+                let size = out.pos() - (pos + 2);
+                out.set(pos, size as u16)?;
             }
             Record::AAAA {
                 ref domain,
                 addr,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::AAAA)?
                     .write(1u16)?
                     .write(ttl.0)?
@@ -347,15 +360,13 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 minimum,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::SOA)?
                     .write(1u16)?
                     .write(ttl)?;
 
-                let pos = buffer.pos();
-                buffer
-                    .write(0u16)?
+                let pos = out.pos();
+                out.write(0u16)?
                     .write(m_name)?
                     .write(r_name)?
                     .write(serial)?
@@ -364,16 +375,15 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                     .write(expire)?
                     .write(minimum)?;
 
-                let size = buffer.pos() - (pos + 2);
-                buffer.set(pos, size as u16)?;
+                let size = out.pos() - (pos + 2);
+                out.set(pos, size as u16)?;
             }
             Record::TXT {
                 ref domain,
                 ref data,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::TXT)?
                     .write(1u16)?
                     .write(ttl)?
@@ -388,22 +398,20 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref host,
                 ttl,
             } => {
-                buffer
-                    .write(domain)?
+                out.write(domain)?
                     .write(QueryType::SRV)?
                     .write(1u16)?
                     .write(ttl)?;
 
-                let pos = buffer.pos();
-                buffer
-                    .write(0u16)?
+                let pos = out.pos();
+                out.write(0u16)?
                     .write(priority)?
                     .write(weight)?
                     .write(port)?
                     .write(host)?;
 
-                let size = buffer.pos() - (pos + 2);
-                buffer.set(pos, size as u16)?;
+                let size = out.pos() - (pos + 2);
+                out.set(pos, size as u16)?;
             }
             Record::OPT { .. } => {}
             Record::UNKNOWN { .. } => {
@@ -411,7 +419,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
             }
         }
 
-        Ok(buffer)
+        Ok(out)
     }
 }
 

@@ -1,7 +1,10 @@
+use std::fmt::Debug;
+
 use crate::dns::{packet::Buffer, DNSError, Result};
 
 pub trait WriteTo<'a, T: IO> {
     type Out: IO = T;
+
     ///
     /// Write an element (or series thereof) to an output.
     ///
@@ -17,34 +20,81 @@ pub trait WriteTo<'a, T: IO> {
 }
 
 pub trait IO {
+    ///
     /// Current position within buffer
+    ///
     fn pos(&self) -> usize;
 
+    ///
     /// Step the buffer position forward a specific number of steps
+    ///
+    /// # Errors
+    /// If the number of steps to take pushes the buffer past the
+    /// end of its internal state.
+    ///
     fn step(&mut self, steps: usize) -> Result<&mut Self>;
 
+    ///
     /// Change the buffer position
+    ///
+    /// # Errors
+    /// If the position is past the end of the buffers internal
+    /// state.
+    ///
     fn seek(&mut self, pos: usize) -> Result<&mut Self>;
 
+    ///
     /// Get a single byte, without changing the buffer position
+    ///
+    /// # Errors
+    /// If the position is past the end of the buffers internal
+    /// state.
+    ///
     fn get(&mut self, pos: usize) -> Result<u8>;
 
+    ///
     /// Set a byte at a specific position
+    ///
+    /// # Errors
+    /// If the position being set, or in conjunction with the
+    /// size of the element, is past the end of the buffers
+    /// internal state.
+    ///
     fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Self>
     where
         T: num::Unsigned + num::PrimInt;
 
+    ///
     /// Get a range of bytes
+    ///
+    /// # Errors
+    /// If the number of elements wanted causes the buffer to read
+    /// past its internal state.
+    ///
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]>;
 
+    ///
+    /// Read out an element from the buffer
+    ///
+    /// # Errors
+    /// If the size of the element causes the buffer to read
+    /// past its internal state.
+    ///
     fn read<'a, T>(&'a mut self) -> Result<T>
     where
         T: TryFrom<&'a mut Self, Error = DNSError> + Default;
 
+    ///
+    /// Write an element into the buffer
+    ///
+    /// # Errors
+    /// If the size of the element causes the buffer to write
+    /// past its internal state.
+    ///
     fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
     where
         Self: Sized,
-        T: WriteTo<'a, Self, Out = Self>;
+        T: WriteTo<'a, Self, Out = Self> + Debug;
 }
 
 macro_rules! impl_write {
@@ -108,9 +158,9 @@ impl<'a, T: IO, const N: usize> WriteTo<'a, T> for &[u8; N] {
     }
 }
 
-impl<'a, T: IO, A> WriteTo<'a, T> for Vec<A>
+impl<'a, T: IO, E> WriteTo<'a, T> for Vec<E>
 where
-    A: WriteTo<'a, T, Out = T> + Clone,
+    E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))

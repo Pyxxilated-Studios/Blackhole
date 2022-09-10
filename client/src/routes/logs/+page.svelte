@@ -1,113 +1,109 @@
-<p>
-	Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis leo orci, porttitor congue enim eu,
-	ultricies aliquet sapien. Sed molestie, est non tincidunt dignissim, sem diam dapibus sem,
-	sollicitudin porta lectus ligula sit amet elit. Sed varius, urna eu tristique ullamcorper, ex odio
-	efficitur orci, eu aliquet libero ante vitae enim. Interdum et malesuada fames ac ante ipsum
-	primis in faucibus. Pellentesque ac condimentum orci. Quisque sed interdum urna, sit amet pulvinar
-	purus. Pellentesque hendrerit condimentum purus, in luctus dolor consequat eget. Nam molestie
-	viverra est, quis lacinia arcu pellentesque et. Nam semper imperdiet lacinia. Aenean euismod odio
-	quam, sit amet ultricies orci interdum in. In hac habitasse platea dictumst. Nulla placerat et
-	turpis eu euismod. Etiam ornare ex eu tristique ultrices. Class aptent taciti sociosqu ad litora
-	torquent per conubia nostra, per inceptos himenaeos. Praesent venenatis ligula eu lobortis
-	scelerisque. Integer placerat tellus vel tempus finibus. Aenean sagittis maximus urna at
-	elementum. Fusce accumsan accumsan ornare. Ut eleifend, nunc a bibendum laoreet, tellus sem
-	egestas nibh, quis finibus felis turpis in nunc. Duis ultrices ligula id lacus tincidunt
-	facilisis. Suspendisse potenti. Nulla sollicitudin congue dolor. Aenean lobortis turpis sed erat
-	vulputate, id scelerisque nibh elementum. Mauris elementum dui non elit sollicitudin, eget tempus
-	ligula aliquam. In dapibus, odio eleifend luctus rutrum, massa est luctus nunc, quis placerat
-	ligula purus nec quam. Cras feugiat augue lacus, nec eleifend justo molestie at. Donec et finibus
-	libero, nec pellentesque nulla. Curabitur non justo quis lorem bibendum eleifend. Aenean malesuada
-	eget dolor nec mollis. Maecenas congue neque id lorem dignissim, laoreet viverra ligula interdum.
-	Aliquam ultrices nisi ut orci sagittis bibendum. Fusce ornare tortor eget pulvinar dictum. Vivamus
-	sit amet magna ligula. Quisque id egestas magna, at scelerisque nunc. Aliquam eget congue lorem.
-	Cras dictum quam ex, eu porta sem commodo sed. Pellentesque sed sapien id justo luctus fermentum.
-	Ut facilisis nunc libero, at feugiat lorem auctor at. Praesent blandit in urna sed placerat.
-	Mauris justo leo, tristique vel molestie sed, ultrices non orci. Cras sodales eget neque vel
-	vehicula. Quisque cursus ullamcorper fringilla. In pharetra pulvinar est a tempor. In semper in
-	libero eget venenatis. Donec vehicula bibendum risus, at sodales nulla consectetur id. Donec
-	dapibus arcu erat, ac convallis tellus iaculis at. Donec sodales, nisi sit amet elementum
-	bibendum, felis magna pharetra lacus, a tristique dolor orci maximus sem. Phasellus condimentum,
-	risus id tempor lobortis, ante velit porta justo, at posuere est urna eget felis. Nunc efficitur
-	neque at sagittis commodo. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur
-	dolor lacus, placerat at maximus a, porta sit amet turpis. Etiam metus urna, placerat vitae
-	consectetur eu, lacinia at nulla. Aliquam porta ornare mi, vitae ornare eros mollis ut. Phasellus
-	congue, lacus vel mattis egestas, risus ante sodales eros, varius sagittis orci nunc a mi.
-	Vestibulum odio est, commodo quis massa pretium, facilisis volutpat lectus. Mauris rhoncus felis
-	mi.
-</p>
+<script lang="ts">
+	import { page } from '$app/stores';
 
-<p>
-	Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis leo orci, porttitor congue enim eu,
-	ultricies aliquet sapien. Sed molestie, est non tincidunt dignissim, sem diam dapibus sem,
-	sollicitudin porta lectus ligula sit amet elit. Sed varius, urna eu tristique ullamcorper, ex odio
-	efficitur orci, eu aliquet libero ante vitae enim. Interdum et malesuada fames ac ante ipsum
-	primis in faucibus. Pellentesque ac condimentum orci. Quisque sed interdum urna, sit amet pulvinar
-	purus. Pellentesque hendrerit condimentum purus, in luctus dolor consequat eget. Nam molestie
-	viverra est, quis lacinia arcu pellentesque et. Nam semper imperdiet lacinia. Aenean euismod odio
-	quam, sit amet ultricies orci interdum in. In hac habitasse platea dictumst. Nulla placerat et
-	turpis eu euismod. Etiam ornare ex eu tristique ultrices. Class aptent taciti sociosqu ad litora
-	torquent per conubia nostra, per inceptos himenaeos. Praesent venenatis ligula eu lobortis
-	scelerisque. Integer placerat tellus vel tempus finibus. Aenean sagittis maximus urna at
-	elementum. Fusce accumsan accumsan ornare. Ut eleifend, nunc a bibendum laoreet, tellus sem
-	egestas nibh, quis finibus felis turpis in nunc. Duis ultrices ligula id lacus tincidunt
-	facilisis. Suspendisse potenti. Nulla sollicitudin congue dolor. Aenean lobortis turpis sed erat
-	vulputate, id scelerisque nibh elementum. Mauris elementum dui non elit sollicitudin, eget tempus
-	ligula aliquam. In dapibus, odio eleifend luctus rutrum, massa est luctus nunc, quis placerat
-	ligula purus nec quam. Cras feugiat augue lacus, nec eleifend justo molestie at. Donec et finibus
-	libero, nec pellentesque nulla. Curabitur non justo quis lorem bibendum eleifend. Aenean malesuada
-	eget dolor nec mollis. Maecenas congue neque id lorem dignissim, laoreet viverra ligula interdum.
-	Aliquam ultrices nisi ut orci sagittis bibendum. Fusce ornare tortor eget pulvinar dictum. Vivamus
-	sit amet magna ligula. Quisque id egestas magna, at scelerisque nunc. Aliquam eget congue lorem.
-	Cras dictum quam ex, eu porta sem commodo sed. Pellentesque sed sapien id justo luctus fermentum.
-	Ut facilisis nunc libero, at feugiat lorem auctor at. Praesent blandit in urna sed placerat.
-	Mauris justo leo, tristique vel molestie sed, ultrices non orci. Cras sodales eget neque vel
-	vehicula. Quisque cursus ullamcorper fringilla. In pharetra pulvinar est a tempor. In semper in
-	libero eget venenatis. Donec vehicula bibendum risus, at sodales nulla consectetur id. Donec
-	dapibus arcu erat, ac convallis tellus iaculis at. Donec sodales, nisi sit amet elementum
-	bibendum, felis magna pharetra lacus, a tristique dolor orci maximus sem. Phasellus condimentum,
-	risus id tempor lobortis, ante velit porta justo, at posuere est urna eget felis. Nunc efficitur
-	neque at sagittis commodo. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur
-	dolor lacus, placerat at maximus a, porta sit amet turpis. Etiam metus urna, placerat vitae
-	consectetur eu, lacinia at nulla. Aliquam porta ornare mi, vitae ornare eros mollis ut. Phasellus
-	congue, lacus vel mattis egestas, risus ante sodales eros, varius sagittis orci nunc a mi.
-	Vestibulum odio est, commodo quis massa pretium, facilisis volutpat lectus. Mauris rhoncus felis
-	mi.
-</p>
+	type MX = { MX: { ttl: number; host: string; priority: number } };
+	type TXT = { TXT: { ttl: number; data: string } };
+	type A = { A: { ttl: number; addr: string } };
+	type AAAA = { AAAA: { ttl: number; addr: string } };
 
-<p>
-	Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis leo orci, porttitor congue enim eu,
-	ultricies aliquet sapien. Sed molestie, est non tincidunt dignissim, sem diam dapibus sem,
-	sollicitudin porta lectus ligula sit amet elit. Sed varius, urna eu tristique ullamcorper, ex odio
-	efficitur orci, eu aliquet libero ante vitae enim. Interdum et malesuada fames ac ante ipsum
-	primis in faucibus. Pellentesque ac condimentum orci. Quisque sed interdum urna, sit amet pulvinar
-	purus. Pellentesque hendrerit condimentum purus, in luctus dolor consequat eget. Nam molestie
-	viverra est, quis lacinia arcu pellentesque et. Nam semper imperdiet lacinia. Aenean euismod odio
-	quam, sit amet ultricies orci interdum in. In hac habitasse platea dictumst. Nulla placerat et
-	turpis eu euismod. Etiam ornare ex eu tristique ultrices. Class aptent taciti sociosqu ad litora
-	torquent per conubia nostra, per inceptos himenaeos. Praesent venenatis ligula eu lobortis
-	scelerisque. Integer placerat tellus vel tempus finibus. Aenean sagittis maximus urna at
-	elementum. Fusce accumsan accumsan ornare. Ut eleifend, nunc a bibendum laoreet, tellus sem
-	egestas nibh, quis finibus felis turpis in nunc. Duis ultrices ligula id lacus tincidunt
-	facilisis. Suspendisse potenti. Nulla sollicitudin congue dolor. Aenean lobortis turpis sed erat
-	vulputate, id scelerisque nibh elementum. Mauris elementum dui non elit sollicitudin, eget tempus
-	ligula aliquam. In dapibus, odio eleifend luctus rutrum, massa est luctus nunc, quis placerat
-	ligula purus nec quam. Cras feugiat augue lacus, nec eleifend justo molestie at. Donec et finibus
-	libero, nec pellentesque nulla. Curabitur non justo quis lorem bibendum eleifend. Aenean malesuada
-	eget dolor nec mollis. Maecenas congue neque id lorem dignissim, laoreet viverra ligula interdum.
-	Aliquam ultrices nisi ut orci sagittis bibendum. Fusce ornare tortor eget pulvinar dictum. Vivamus
-	sit amet magna ligula. Quisque id egestas magna, at scelerisque nunc. Aliquam eget congue lorem.
-	Cras dictum quam ex, eu porta sem commodo sed. Pellentesque sed sapien id justo luctus fermentum.
-	Ut facilisis nunc libero, at feugiat lorem auctor at. Praesent blandit in urna sed placerat.
-	Mauris justo leo, tristique vel molestie sed, ultrices non orci. Cras sodales eget neque vel
-	vehicula. Quisque cursus ullamcorper fringilla. In pharetra pulvinar est a tempor. In semper in
-	libero eget venenatis. Donec vehicula bibendum risus, at sodales nulla consectetur id. Donec
-	dapibus arcu erat, ac convallis tellus iaculis at. Donec sodales, nisi sit amet elementum
-	bibendum, felis magna pharetra lacus, a tristique dolor orci maximus sem. Phasellus condimentum,
-	risus id tempor lobortis, ante velit porta justo, at posuere est urna eget felis. Nunc efficitur
-	neque at sagittis commodo. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur
-	dolor lacus, placerat at maximus a, porta sit amet turpis. Etiam metus urna, placerat vitae
-	consectetur eu, lacinia at nulla. Aliquam porta ornare mi, vitae ornare eros mollis ut. Phasellus
-	congue, lacus vel mattis egestas, risus ante sodales eros, varius sagittis orci nunc a mi.
-	Vestibulum odio est, commodo quis massa pretium, facilisis volutpat lectus. Mauris rhoncus felis
-	mi.
-</p>
+	type ANSWER = MX | TXT | A | AAAA;
+
+	interface Request {
+		client: string;
+		answers: ANSWER[];
+		question: { name: string; qtype: string };
+		status: string;
+		elapsed: number;
+		timestamp: number;
+	}
+
+	type Requests = Request[];
+
+	let requests: Requests;
+
+	const refetch = async () => {
+		try {
+			const resp = await fetch(`${$page.url.origin}/api/requests`);
+			const json = await resp.json();
+			requests = (json as Requests).sort(
+				(a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+			);
+			error = undefined;
+		} catch (err: any) {
+			error = err;
+		}
+	};
+
+	let error: string | undefined = undefined;
+
+	setInterval(refetch, 30000);
+	refetch();
+</script>
+
+<svelte:head>
+	<title>Blackhole: Query Log</title>
+</svelte:head>
+
+<h2>Query Log</h2>
+
+<div class="overflow-x-auto">
+	<table class="table table-zebra w-full">
+		<!-- head -->
+		<thead>
+			<tr>
+				<th class="sticky top-0">Time</th>
+				<th class="sticky top-0">Request</th>
+				<th class="sticky top-0">Client</th>
+			</tr>
+		</thead>
+		<tbody>
+			{#if requests}
+				{#each Array.from(requests) as request}
+					<tr>
+						<td class="flex flex-col font-mono">
+							<span class="countdown">
+								{new Date(request.timestamp).toLocaleTimeString()}
+							</span>
+							<span class="text-sm text-neutral-content">
+								{new Date(request.timestamp).toLocaleDateString()}
+							</span>
+						</td>
+						<td>
+							<div tabindex="0" class="collapse collapse-plus">
+								<div class="collapse-title">
+									<span>{request.question.name}</span>
+									<span class="text-sm text-neutral-content">{request.question.qtype}</span>
+								</div>
+								<div class="collapse-content text-sm text-neutral-content">
+									<p>{request.status}</p>
+									<p>Elapsed: {request.elapsed / 1000000} ms</p>
+									{#each Array.from(request.answers) as answer}
+										{#each Object.entries(answer) as [ty, record]}
+											<p>
+												{ty}:
+												{#if ty === 'MX'}
+													{record.host} Priority: {record.priority} (ttl={record.ttl})
+												{:else if ty === 'TXT'}
+													{record.data} (ttl={record.ttl})
+												{:else if ty === 'A' || ty === 'AAAA'}
+													{record.addr} (ttl={record.ttl})
+												{/if}
+											</p>
+										{/each}
+									{/each}
+								</div>
+							</div>
+						</td>
+						<td>{request.client}</td>
+					</tr>
+				{/each}
+			{:else if error}
+				<p>Error: {error}</p>
+			{:else}
+				<td />
+				<td>Loading ...</td>
+				<td />
+			{/if}
+		</tbody>
+	</table>
+</div>

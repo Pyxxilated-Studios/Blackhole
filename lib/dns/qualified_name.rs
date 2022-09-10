@@ -1,10 +1,12 @@
+use serde::Serialize;
+
 use crate::dns::{
     packet::Buffer,
     traits::{WriteTo, IO},
     DNSError, Result,
 };
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub struct QualifiedName(pub String);
 
 impl QualifiedName {

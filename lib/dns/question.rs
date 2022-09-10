@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::dns::{
     packet::Buffer,
     qualified_name::QualifiedName,
@@ -5,7 +7,7 @@ use crate::dns::{
     DNSError, QueryType, Result,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize)]
 pub struct Question {
     pub name: QualifiedName,
     pub qtype: QueryType,
