@@ -1,4 +1,4 @@
-name: Rust
+name: Testing
 
 on:
   pull_request:
@@ -8,18 +8,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  server:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
-    - name: rustup toolchain install
+
+    - name: Rustup Toolchain Install
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
         components: clippy rustfmt
-
+        
     - name: Ensure style is consistent
       run: cargo fmt --check
 
@@ -31,3 +31,24 @@ jobs:
 
     - name: Perform testing
       run: cargo test --verbose
+
+  client:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Yarn
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: ./client/yarn.lock
+
+      - name: Install dependencies for client
+        working-directory: ./client
+        run: yarn install
+
+      - name: Ensure style is consistent
+        working-directory: ./client
+        run: yarn lint
