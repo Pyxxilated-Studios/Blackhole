@@ -23,12 +23,6 @@ jobs:
     - name: Ensure style is consistent
       run: cargo fmt --check
 
-    - name: Ensure all possible issues are fixed
-      run: cargo clippy --
-        -D clippy::pedantic 
-        -A clippy::cast_possible_truncation
-        -A clippy::must-use-candidate
-
     - name: Perform testing
       run: cargo test --verbose
 
