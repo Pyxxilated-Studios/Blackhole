@@ -17,7 +17,7 @@ harness = false
 
 [dependencies]
 chrono = { version = "0.4", features = [ "serde" ] }
-criterion = { version = "0.3", features = [ "real_blackbox", "html_reports" ] }
+criterion = { version = "0.4", features = [ "real_blackbox", "html_reports" ] }
 lazy_static = "1"
 num = "0.4"
 opentelemetry = { version = "0.17", features = [ "rt-tokio" ] }
