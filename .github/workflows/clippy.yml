@@ -1,19 +1,9 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-# rust-clippy is a tool that runs a bunch of lints to catch common
-# mistakes in your Rust code and help improve your Rust code.
-# More details at https://github.com/rust-lang/rust-clippy 
-# and https://rust-lang.github.io/rust-clippy/
-
 name: rust-clippy analyze
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
-    # The branches below must be a subset of the branches above
     branches: [ "main" ]
 
 jobs:
@@ -28,7 +18,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af #@v1
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
@@ -42,7 +32,7 @@ jobs:
         run:
           cargo clippy
           --all-features
-          -D clippy::pedantic 
+          -- -D clippy::pedantic 
           -A clippy::cast_possible_truncation
           -A clippy::must-use-candidate
           --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
