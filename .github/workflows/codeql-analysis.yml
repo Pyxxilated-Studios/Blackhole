@@ -1,6 +1,8 @@
 name: "CodeQL"
 
 on:
+  push:
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
     paths:
@@ -28,10 +30,11 @@ jobs:
       uses: github/codeql-action/init@v2
       with:
         languages: ${{ matrix.language }}
-        paths: "client/"
 
     - name: Autobuild
       uses: github/codeql-action/autobuild@v2
+      with:
+        working-directory: "client/"
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
