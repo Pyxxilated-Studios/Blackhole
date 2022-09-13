@@ -34,14 +34,14 @@ jobs:
         run:
           cargo clippy
           --all-features
+          --message-format=json
           -- -D clippy::pedantic 
           -A clippy::cast_possible_truncation
-          -A clippy::must-use-candidate
-          --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+          -A clippy::must-use-candidate | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
       - name: Upload analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@v1
+        uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
