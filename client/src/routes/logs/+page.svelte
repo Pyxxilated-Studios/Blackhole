@@ -1,5 +1,6 @@
 <script lang="ts">
     import { page } from "$app/stores";
+    import { onMount, onDestroy } from "svelte";
 
     type MX = { MX: { ttl: number; host: string; priority: number } };
     type TXT = { TXT: { ttl: number; data: string } };
@@ -20,6 +21,7 @@
     type Requests = Request[];
 
     let requests: Requests;
+    let error: unknown | undefined = undefined;
 
     const refetch = async () => {
         try {
@@ -34,10 +36,15 @@
         }
     };
 
-    let error: unknown | undefined = undefined;
+    const interval = setInterval(refetch, 30000);
 
-    setInterval(refetch, 30000);
-    refetch();
+    onMount(() => {
+        refetch();
+    });
+
+    onDestroy(() => {
+        clearInterval(interval);
+    });
 </script>
 
 <svelte:head>
