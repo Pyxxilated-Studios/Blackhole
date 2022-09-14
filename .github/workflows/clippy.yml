@@ -1,6 +1,8 @@
 name: rust-clippy analyze
 
 on:
+  push:
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
     paths:
