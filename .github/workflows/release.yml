@@ -1,21 +1,21 @@
-name: Docker Image CI
+name: Release
 
 on:
   push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
+    branches: ["main"]
+    tags: ["v*"]
     paths-ignore:
-      - '.github/ISSUE_TEMPLATE/**'
-      - '*.md'
-      - '.*ignore'
-      - 'benches/**'
+      - ".github/ISSUE_TEMPLATE/**"
+      - "*.md"
+      - ".*ignore"
+      - "benches/**"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths-ignore:
-      - '.github/ISSUE_TEMPLATE/**'
-      - '*.md'
-      - '.*ignore'
-      - 'benches/**'
+      - ".github/ISSUE_TEMPLATE/**"
+      - "*.md"
+      - ".*ignore"
+      - "benches/**"
 
 env:
   REGISTRY: ghcr.io
