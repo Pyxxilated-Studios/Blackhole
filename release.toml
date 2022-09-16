@@ -1,0 +1,4 @@
+pre-release-commit-message = "chore: release"
+tag-message = "{{tag_name}}"
+consolidate-commits = true
+consolidate-pushes = true
