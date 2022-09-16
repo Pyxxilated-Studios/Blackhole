@@ -11,10 +11,12 @@ use tracing::{error, info, instrument};
 use crate::{
     dns::{
         packet::{Buffer, Packet},
+        qualified_name::QualifiedName,
         question::Question,
         traits::IO,
-        Record, Result, ResultCode,
+        Record, Result, ResultCode, Ttl,
     },
+    filter::{Kind, FILTERS},
     statistics::{Statistic, STATS},
 };
 
@@ -214,7 +216,32 @@ impl Handler {
         let id = packet.header.id;
 
         let start = Instant::now();
-        match handler.forward(packet).await {
+
+        let response_packet = if let Some(rule) = FILTERS.read().await.check(&packet) {
+            match rule.ty {
+                Kind::None | Kind::Allow => handler.forward(packet).await,
+                Kind::Deny => {
+                    let mut packet = packet;
+                    packet.header.recursion_available = true;
+                    packet.header.response = true;
+                    packet.header.rescode = ResultCode::NOERROR;
+                    packet.header.truncated_message = false;
+                    packet.header.answers = 1;
+                    packet.answers = vec![Record::A {
+                        domain: QualifiedName(packet.questions[0].name.name()),
+                        addr: Ipv4Addr::UNSPECIFIED,
+                        ttl: Ttl(10),
+                    }];
+                    packet.authorities = vec![];
+                    packet.resources = vec![];
+                    Ok(packet)
+                }
+            }
+        } else {
+            handler.forward(packet).await
+        };
+
+        match response_packet {
             Ok(response_packet) => {
                 let id = response_packet.header.id;
 
