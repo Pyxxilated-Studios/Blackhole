@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use serde_json::json;
 use warp::{http::Response, Filter};
 
-use crate::statistics::STATS;
+use crate::statistics::STATISTICS;
 
 #[derive(Clone)]
 pub struct Server;
@@ -22,6 +22,6 @@ impl Server {
     async fn requests() -> Result<impl warp::Reply, Infallible> {
         Ok(Response::builder()
             .header("Content-Type", "application/json")
-            .body(json!(STATS.read().await.requests()).to_string()))
+            .body(json!(STATISTICS.read().await.requests()).to_string()))
     }
 }

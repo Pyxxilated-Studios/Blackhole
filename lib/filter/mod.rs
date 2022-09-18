@@ -16,10 +16,12 @@ lazy_static! {
 
 const COMMENT_CHARS: [char; 2] = ['!', '#'];
 
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct Action {}
+#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
+pub(crate) struct Action {
+    rewrite: Option<String>,
+}
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub(crate) enum Kind {
     Allow,
     Deny,
@@ -27,23 +29,23 @@ pub(crate) enum Kind {
     None,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub struct Rule {
     pub(crate) domain: String,
     pub(crate) ty: Kind,
     pub(crate) action: Option<Action>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Rules {
-    children: HashMap<String, Rules>,
-    rule: Option<Rule>,
+    pub(crate) children: HashMap<String, Rules>,
+    pub(crate) rule: Option<Rule>,
 }
 
 #[derive(Default, Debug)]
 pub struct Filter {
-    lists: Vec<String>,
-    rules: Rules,
+    pub(crate) lists: Vec<String>,
+    pub(crate) rules: Rules,
 }
 
 impl Filter {
@@ -54,12 +56,14 @@ impl Filter {
 
         let mut rule = Rule::default();
 
-        if line.starts_with("||") {
-            rule.domain = line[2..].to_string();
+        if let Some(domain) = line.strip_prefix("||") {
+            rule.domain = domain
+                .chars()
+                .take_while(|ch| ch.is_alphanumeric() || ['-', '_', '.'].contains(ch))
+                .collect();
             rule.ty = Kind::Deny;
-        } else if line.starts_with("@@||") {
-            rule.domain = line[4..]
-                .to_string()
+        } else if let Some(domain) = line.strip_prefix("@@||") {
+            rule.domain = domain
                 .chars()
                 .take_while(|ch| ch.is_alphanumeric() || ['-', '_', '.'].contains(ch))
                 .collect();
@@ -72,10 +76,7 @@ impl Filter {
         let mut current_node = &mut self.rules;
 
         for domain in rule.domain.split('.').rev() {
-            current_node = current_node
-                .children
-                .entry(domain.to_string())
-                .or_insert(Rules::default());
+            current_node = current_node.children.entry(domain.to_string()).or_default();
         }
 
         current_node.rule = Some(rule);
@@ -89,6 +90,12 @@ impl Filter {
         });
     }
 
+    ///
+    /// Load a list into the filter
+    ///
+    /// # Errors
+    /// If it fails to open the list
+    ///
     pub fn load(&mut self, list: &str) -> io::Result<()> {
         let file = std::fs::File::open(list)?;
 
@@ -96,15 +103,8 @@ impl Filter {
 
         self.lists.push(list.to_string());
 
-        // println!("{:#?}", self.rules);
-        // println!("{:#?}", self.lists);
-
         Ok(())
     }
-
-    // pub fn refresh(&mut self) -> io::Result<()> {
-    //     self.lists.iter().try_for_each(|file| self.load(&file))
-    // }
 
     pub fn check(&self, packet: &dns::packet::Packet) -> Option<Rule> {
         let mut current_node = &self.rules;
@@ -112,12 +112,83 @@ impl Filter {
         for entry in packet.questions[0].name.name().split('.').rev() {
             match current_node.children.get(entry) {
                 Some(entry) => current_node = entry,
-                None => {
-                    return current_node.rule.clone();
-                }
+                None => break,
             }
         }
 
         current_node.rule.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::{Filter, Kind, Rule, Rules};
+
+    #[test]
+    fn parsing() {
+        let mut filter = Filter::default();
+
+        filter.parse_line("||google.com");
+        filter.parse_line("@@||test.com");
+        filter.parse_line("example.com");
+
+        //filter.parse_line("0.0.0.0 ads.com");
+        //filter.parse_line("s*.com");
+
+        assert_eq!(
+            filter.rules,
+            Rules {
+                children: {
+                    let mut inner = HashMap::default();
+                    inner.insert(
+                        "com".to_string(),
+                        Rules {
+                            children: {
+                                let mut inner = HashMap::default();
+                                inner.insert(
+                                    "google".to_string(),
+                                    Rules {
+                                        children: HashMap::default(),
+                                        rule: Some(Rule {
+                                            domain: "google.com".to_string(),
+                                            ty: Kind::Deny,
+                                            action: None,
+                                        }),
+                                    },
+                                );
+                                inner.insert(
+                                    "test".to_string(),
+                                    Rules {
+                                        children: HashMap::default(),
+                                        rule: Some(Rule {
+                                            domain: "test.com".to_string(),
+                                            ty: Kind::Allow,
+                                            action: None,
+                                        }),
+                                    },
+                                );
+                                inner.insert(
+                                    "example".to_string(),
+                                    Rules {
+                                        children: HashMap::default(),
+                                        rule: Some(Rule {
+                                            domain: "example.com".to_string(),
+                                            ty: Kind::Deny,
+                                            action: None,
+                                        }),
+                                    },
+                                );
+                                inner
+                            },
+                            rule: None,
+                        },
+                    );
+                    inner
+                },
+                rule: None,
+            }
+        );
     }
 }

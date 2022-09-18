@@ -17,7 +17,7 @@ use crate::{
         QueryType, Record, Result, ResultCode, Ttl,
     },
     filter::{Kind, Rule, FILTERS},
-    statistics::{Statistic, STATS},
+    statistics::{Request, Statistic, STATISTICS},
 };
 
 pub struct ServerBuilder {
@@ -285,13 +285,13 @@ impl Handler {
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        STATS.write().await.record(handler);
+        STATISTICS.write().await.record(handler);
     }
 }
 
 impl From<Handler> for Statistic {
     fn from(handler: Handler) -> Self {
-        Statistic {
+        Statistic::Request(Request {
             client: handler.client,
             question: handler.question,
             answers: handler.answers,
@@ -299,6 +299,6 @@ impl From<Handler> for Statistic {
             status: handler.status,
             elapsed: handler.elapsed,
             timestamp: Utc::now(),
-        }
+        })
     }
 }

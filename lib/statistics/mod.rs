@@ -11,11 +11,11 @@ use crate::{
 };
 
 lazy_static! {
-    pub static ref STATS: Arc<RwLock<Statistics>> = Arc::default();
+    pub static ref STATISTICS: Arc<RwLock<Statistics>> = Arc::default();
 }
 
-#[derive(Debug, Serialize)]
-pub struct Statistic {
+#[derive(Debug, Serialize, Clone)]
+pub struct Request {
     pub client: String,
     pub question: Question,
     pub answers: Vec<Record>,
@@ -23,6 +23,12 @@ pub struct Statistic {
     pub status: ResultCode,
     pub elapsed: usize,
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub enum Statistic {
+    Request(Request),
+    Value(usize),
 }
 
 #[derive(Default)]
@@ -38,7 +44,16 @@ impl Statistics {
         self.statistics.push(stat.into());
     }
 
-    pub fn requests(&self) -> &Vec<Statistic> {
-        &self.statistics
+    pub fn requests(&self) -> Vec<Request> {
+        self.statistics
+            .iter()
+            .filter_map(|stat| {
+                if let Statistic::Request(req) = stat {
+                    Some(req.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
