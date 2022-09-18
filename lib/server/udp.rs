@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Instant,
 };
@@ -11,11 +11,13 @@ use tracing::{error, info, instrument};
 use crate::{
     dns::{
         packet::{Buffer, Packet},
+        qualified_name::QualifiedName,
         question::Question,
         traits::IO,
-        Record, Result, ResultCode,
+        QueryType, Record, Result, ResultCode, Ttl,
     },
-    statistics::{Statistic, STATS},
+    filter::{Kind, Rule, FILTERS},
+    statistics::{Request, Statistic, STATISTICS},
 };
 
 pub struct ServerBuilder {
@@ -105,6 +107,7 @@ struct Handler {
     client: String,
     question: Question,
     answers: Vec<Record>,
+    rule: Option<Rule>,
     status: ResultCode,
     elapsed: usize,
 }
@@ -214,7 +217,58 @@ impl Handler {
         let id = packet.header.id;
 
         let start = Instant::now();
-        match handler.forward(packet).await {
+
+        let response_packet = if let Some(rule) = FILTERS.read().await.check(&packet) {
+            match rule.ty {
+                Kind::None => handler.forward(packet).await,
+                Kind::Allow => {
+                    handler.rule = Some(rule);
+                    handler.forward(packet).await
+                }
+                Kind::Deny => {
+                    let mut packet = packet;
+                    packet.header.recursion_available = true;
+                    packet.header.response = true;
+                    packet.header.rescode = ResultCode::NOERROR;
+                    packet.header.truncated_message = false;
+                    match packet.questions.first() {
+                        Some(Question {
+                            qtype: QueryType::A,
+                            ..
+                        }) => {
+                            packet.header.answers = 1;
+                            packet.answers = vec![Record::A {
+                                domain: QualifiedName(packet.questions[0].name.name()),
+                                addr: Ipv4Addr::UNSPECIFIED,
+                                ttl: Ttl(10),
+                            }];
+                        }
+                        Some(Question {
+                            qtype: QueryType::AAAA,
+                            ..
+                        }) => {
+                            packet.header.answers = 1;
+                            packet.answers = vec![Record::AAAA {
+                                domain: QualifiedName(packet.questions[0].name.name()),
+                                addr: Ipv6Addr::UNSPECIFIED,
+                                ttl: Ttl(10),
+                            }];
+                        }
+                        _ => {}
+                    }
+                    packet.authorities = vec![];
+                    packet.resources = vec![];
+
+                    handler.rule = Some(rule);
+
+                    Ok(packet)
+                }
+            }
+        } else {
+            handler.forward(packet).await
+        };
+
+        match response_packet {
             Ok(response_packet) => {
                 let id = response_packet.header.id;
 
@@ -231,19 +285,20 @@ impl Handler {
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        STATS.write().await.record(handler);
+        STATISTICS.write().await.record(handler);
     }
 }
 
 impl From<Handler> for Statistic {
     fn from(handler: Handler) -> Self {
-        Statistic {
+        Statistic::Request(Request {
             client: handler.client,
             question: handler.question,
             answers: handler.answers,
+            rule: handler.rule,
             status: handler.status,
             elapsed: handler.elapsed,
             timestamp: Utc::now(),
-        }
+        })
     }
 }

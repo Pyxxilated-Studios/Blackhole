@@ -64,6 +64,12 @@ async fn main() {
         }
     };
 
+    blackhole::filter::FILTERS
+        .write()
+        .await
+        .load("target/filters.txt")
+        .unwrap_or_default();
+
     let udp_v4_server = tokio::spawn(async move { udp_v4_server.run().await });
     let udp_v6_server = tokio::spawn(async move { udp_v6_server.run().await });
 
