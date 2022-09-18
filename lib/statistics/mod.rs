@@ -5,7 +5,10 @@ use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
-use crate::dns::{question::Question, Record, ResultCode};
+use crate::{
+    dns::{question::Question, Record, ResultCode},
+    filter::Rule,
+};
 
 lazy_static! {
     pub static ref STATS: Arc<RwLock<Statistics>> = Arc::default();
@@ -16,6 +19,7 @@ pub struct Statistic {
     pub client: String,
     pub question: Question,
     pub answers: Vec<Record>,
+    pub rule: Option<Rule>,
     pub status: ResultCode,
     pub elapsed: usize,
     pub timestamp: DateTime<Utc>,
