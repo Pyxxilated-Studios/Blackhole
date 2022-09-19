@@ -113,9 +113,9 @@
     esbuild "^0.15.7"
 
 "@sveltejs/kit@next":
-  version "1.0.0-next.484"
-  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.0.0-next.484.tgz#159d65be7d596ab9e49a59d52799e0983d6d6923"
-  integrity sha512-Y3l8OmlgmfJX3m081rMUZmmEQWHtiSsj3+YWYK/CQ4V99jqoztXPz/4cAxUt5mC45jVF5Ee9ykmh6GzkYjvfAQ==
+  version "1.0.0-next.488"
+  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.0.0-next.488.tgz#8cdb7eb3bcaa54d2a382a2d922f063b4a3f181f2"
+  integrity sha512-CUeIFxo90FDItZaW+o47ZQaWKTdu9EN4oJKTf7IQZFT/Ch8QlxRxF2clg0XIOB5hJjakQeJplK4YOJtyVZ31jw==
   dependencies:
     "@sveltejs/vite-plugin-svelte" "^1.0.5"
     "@types/cookie" "^0.5.1"
