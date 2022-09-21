@@ -7,6 +7,7 @@ use std::{
 use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
+use tracing::{info, instrument};
 
 use crate::dns;
 
@@ -96,7 +97,9 @@ impl Filter {
     /// # Errors
     /// If it fails to open the list
     ///
+    #[instrument(skip(self, list))]
     pub fn load(&mut self, list: &str) -> io::Result<()> {
+        info!("loading filter list: {list}");
         let file = std::fs::File::open(list)?;
 
         self.parse(BufReader::new(file));

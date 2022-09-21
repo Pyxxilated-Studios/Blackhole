@@ -8,7 +8,7 @@ use blackhole::dns::{
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 pub fn packet_to_buffer(c: &mut Criterion) {
-    c.bench_function("creating a packet", |b| {
+    c.bench_function("creating a buffer", |b| {
         let packet = Packet {
             header: Header {
                 id: 56029,
@@ -54,7 +54,7 @@ pub fn packet_to_buffer(c: &mut Criterion) {
 }
 
 pub fn buffer_to_packet(c: &mut Criterion) {
-    c.bench_function("creating a buffer", |b| {
+    c.bench_function("creating a packet", |b| {
         let mut buffer: Buffer = Packet {
             header: Header {
                 id: 56029,

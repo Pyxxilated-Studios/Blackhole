@@ -75,14 +75,5 @@ async fn main() {
 
     let api_server = tokio::spawn(async move { blackhole::api::server::Server.run().await });
 
-    tokio::spawn(async move {
-        // while let Ok((mut stream, _peer)) = listener.accept().await {
-        //     stream.readable().await.unwrap();
-        //     let _ = blackhole::dns::packet::Packet::from_tcp(&mut stream)
-        //         .await
-        //         .unwrap();
-        // }
-    });
-
     let _joins = tokio::join!(udp_v4_server, udp_v6_server, api_server);
 }

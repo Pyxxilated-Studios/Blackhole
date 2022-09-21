@@ -4,7 +4,8 @@ use std::{
     time::Instant,
 };
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument};
 
@@ -17,7 +18,7 @@ use crate::{
         QueryType, Record, Result, ResultCode, Ttl,
     },
     filter::{Kind, Rule, FILTERS},
-    statistics::{Request, Statistic, STATISTICS},
+    statistics::{self, STATISTICS},
 };
 
 pub struct ServerBuilder {
@@ -102,7 +103,7 @@ impl Server {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 struct Handler {
     client: String,
     question: Question,
@@ -110,6 +111,7 @@ struct Handler {
     rule: Option<Rule>,
     status: ResultCode,
     elapsed: usize,
+    timestamp: DateTime<Utc>,
 }
 
 impl Handler {
@@ -208,22 +210,13 @@ impl Handler {
         Packet::try_from(&mut res_buffer)
     }
 
-    async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
-        let mut handler = Handler {
-            client: address.ip().to_string(),
-            ..Default::default()
-        };
-
-        let id = packet.header.id;
-
-        let start = Instant::now();
-
-        let response_packet = if let Some(rule) = FILTERS.read().await.check(&packet) {
+    async fn filter(&mut self, packet: Packet) -> Result<Packet> {
+        if let Some(rule) = FILTERS.read().await.check(&packet) {
             match rule.ty {
-                Kind::None => handler.forward(packet).await,
+                Kind::None => self.forward(packet).await,
                 Kind::Allow => {
-                    handler.rule = Some(rule);
-                    handler.forward(packet).await
+                    self.rule = Some(rule);
+                    self.forward(packet).await
                 }
                 Kind::Deny => {
                     let mut packet = packet;
@@ -259,16 +252,27 @@ impl Handler {
                     packet.authorities = vec![];
                     packet.resources = vec![];
 
-                    handler.rule = Some(rule);
+                    self.rule = Some(rule);
 
                     Ok(packet)
                 }
             }
         } else {
-            handler.forward(packet).await
+            self.forward(packet).await
+        }
+    }
+
+    async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
+        let mut handler = Handler {
+            client: address.ip().to_string(),
+            ..Default::default()
         };
 
-        match response_packet {
+        let id = packet.header.id;
+
+        let start = Instant::now();
+
+        match handler.filter(packet).await {
             Ok(response_packet) => {
                 let id = response_packet.header.id;
 
@@ -285,20 +289,10 @@ impl Handler {
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        STATISTICS.write().await.record(handler);
-    }
-}
-
-impl From<Handler> for Statistic {
-    fn from(handler: Handler) -> Self {
-        Statistic::Request(Request {
-            client: handler.client,
-            question: handler.question,
-            answers: handler.answers,
-            rule: handler.rule,
-            status: handler.status,
-            elapsed: handler.elapsed,
-            timestamp: Utc::now(),
-        })
+        STATISTICS
+            .write()
+            .await
+            .record(statistics::REQUEST, &handler)
+            .count(statistics::AVERAGE_REQUEST_TIME, handler.elapsed);
     }
 }

@@ -2,9 +2,13 @@ name: rust-clippy analyze
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+    paths:
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "**/*.rs"
       - "Cargo.toml"
@@ -33,11 +37,10 @@ jobs:
         run: cargo install clippy-sarif sarif-fmt
 
       - name: Run rust-clippy
-        run:
-          cargo clippy
+        run: cargo clippy
           --all-features
           --message-format=json
-          -- -D clippy::pedantic 
+          -- -D clippy::pedantic
           -A clippy::cast_possible_truncation
           -A clippy::must-use-candidate | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
