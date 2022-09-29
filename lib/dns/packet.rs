@@ -48,7 +48,7 @@ impl IO for Buffer {
         }
     }
 
-    fn get(&mut self, pos: usize) -> Result<u8> {
+    fn get(&self, pos: usize) -> Result<u8> {
         if pos >= DNS_PACKET_SIZE {
             Err(DNSError::EndOfBuffer)
         } else {
@@ -80,7 +80,7 @@ impl IO for Buffer {
         Ok(self)
     }
 
-    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]> {
         if start + len >= DNS_PACKET_SIZE {
             Err(DNSError::EndOfBuffer)
         } else {
@@ -107,24 +107,23 @@ impl TryFrom<Packet> for Buffer {
     type Error = DNSError;
 
     fn try_from(mut packet: Packet) -> Result<Self> {
-        let mut buffer = Buffer::default();
         packet.header.questions = packet.questions.len() as u16;
         packet.header.answers = packet.answers.len() as u16;
         packet.header.authoritative_entries = packet.authorities.len() as u16;
         packet.header.resource_entries = packet.resources.len() as u16;
 
-        buffer
+        Buffer::default()
             .write(packet.header)?
             .write(packet.questions)?
             .write(packet.answers)?
             .write(packet.authorities)?
-            .write(packet.resources)?;
-
-        Ok(buffer)
+            .write(packet.resources)
+            .cloned()
     }
 }
 
 impl Default for Buffer {
+    #[inline]
     fn default() -> Self {
         Buffer {
             buffer: [0; DNS_PACKET_SIZE],

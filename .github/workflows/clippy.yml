@@ -42,7 +42,8 @@ jobs:
           --message-format=json
           -- -D clippy::pedantic
           -A clippy::cast_possible_truncation
-          -A clippy::must-use-candidate | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+          -A clippy::must-use-candidate
+          -A clippy::cast-sign-loss | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
       - name: Upload analysis results to GitHub

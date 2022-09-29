@@ -18,7 +18,7 @@ use crate::{
         QueryType, Record, Result, ResultCode, Ttl,
     },
     filter::{Kind, Rule, FILTERS},
-    statistics::{self, STATISTICS},
+    statistics::{Average, Request, Statistic, STATISTICS},
 };
 
 pub struct ServerBuilder {
@@ -91,13 +91,9 @@ impl Server {
     async fn receive(&self) -> Result<(Packet, SocketAddr)> {
         let mut buffer = Buffer::default();
 
-        self.socket.read().await.readable().await?;
-        let (_, address) = self
-            .socket
-            .read()
-            .await
-            .recv_from(buffer.buffer_mut())
-            .await?;
+        let sock = self.socket.read().await;
+        sock.readable().await?;
+        let (_, address) = sock.recv_from(buffer.buffer_mut()).await?;
 
         Ok((Packet::try_from(&mut buffer)?, address))
     }
@@ -136,11 +132,10 @@ impl Handler {
             Buffer::try_from(packet.clone())
         })?;
 
-        socket.read().await.writable().await?;
-        socket
-            .read()
-            .await
-            .send_to(&buffer.buffer()[..buffer.pos()], address)
+        let sock = socket.read().await;
+
+        sock.writable().await?;
+        sock.send_to(&buffer.buffer()[..buffer.pos()], address)
             .await?;
 
         self.status = packet.header.rescode;
@@ -176,15 +171,15 @@ impl Handler {
             }
         };
 
-        if let Err(err) = socket.read().await.writable().await {
+        let sock = socket.read().await;
+
+        if let Err(err) = sock.writable().await {
             error!("{err:?}");
             return;
         }
 
-        if let Err(err) = socket
-            .read()
-            .await
-            .send_to(&buffer.buffer()[..buffer.pos()], address)
+        if let Err(err) = sock
+            .send_to(buffer.get_range(0, buffer.pos()).unwrap(), address)
             .await
         {
             error!("{err:?}");
@@ -211,54 +206,50 @@ impl Handler {
     }
 
     async fn filter(&mut self, packet: Packet) -> Result<Packet> {
-        if let Some(rule) = FILTERS.read().await.check(&packet) {
-            match rule.ty {
-                Kind::None => self.forward(packet).await,
-                Kind::Allow => {
-                    self.rule = Some(rule);
-                    self.forward(packet).await
-                }
-                Kind::Deny => {
-                    let mut packet = packet;
-                    packet.header.recursion_available = true;
-                    packet.header.response = true;
-                    packet.header.rescode = ResultCode::NOERROR;
-                    packet.header.truncated_message = false;
-                    match packet.questions.first() {
-                        Some(Question {
-                            qtype: QueryType::A,
-                            ..
-                        }) => {
-                            packet.header.answers = 1;
-                            packet.answers = vec![Record::A {
-                                domain: QualifiedName(packet.questions[0].name.name()),
-                                addr: Ipv4Addr::UNSPECIFIED,
-                                ttl: Ttl(10),
-                            }];
-                        }
-                        Some(Question {
-                            qtype: QueryType::AAAA,
-                            ..
-                        }) => {
-                            packet.header.answers = 1;
-                            packet.answers = vec![Record::AAAA {
-                                domain: QualifiedName(packet.questions[0].name.name()),
-                                addr: Ipv6Addr::UNSPECIFIED,
-                                ttl: Ttl(10),
-                            }];
-                        }
-                        _ => {}
-                    }
-                    packet.authorities = vec![];
-                    packet.resources = vec![];
-
-                    self.rule = Some(rule);
-
-                    Ok(packet)
-                }
+        match FILTERS.read().await.check(&packet) {
+            Some(rule) if rule.ty == Kind::Allow => {
+                self.rule = Some(rule);
+                self.forward(packet).await
             }
-        } else {
-            self.forward(packet).await
+            Some(rule) if rule.ty == Kind::Deny => {
+                let mut packet = packet;
+                packet.header.recursion_available = true;
+                packet.header.response = true;
+                packet.header.rescode = ResultCode::NOERROR;
+                packet.header.truncated_message = false;
+                match packet.questions.first() {
+                    Some(Question {
+                        qtype: QueryType::A,
+                        ..
+                    }) => {
+                        packet.header.answers = 1;
+                        packet.answers = vec![Record::A {
+                            domain: QualifiedName(packet.questions[0].name.name()),
+                            addr: Ipv4Addr::UNSPECIFIED,
+                            ttl: Ttl(10),
+                        }];
+                    }
+                    Some(Question {
+                        qtype: QueryType::AAAA,
+                        ..
+                    }) => {
+                        packet.header.answers = 1;
+                        packet.answers = vec![Record::AAAA {
+                            domain: QualifiedName(packet.questions[0].name.name()),
+                            addr: Ipv6Addr::UNSPECIFIED,
+                            ttl: Ttl(10),
+                        }];
+                    }
+                    _ => {}
+                }
+                packet.authorities = vec![];
+                packet.resources = vec![];
+
+                self.rule = Some(rule);
+
+                Ok(packet)
+            }
+            _ => self.forward(packet).await,
         }
     }
 
@@ -292,7 +283,24 @@ impl Handler {
         STATISTICS
             .write()
             .await
-            .record(statistics::REQUEST, &handler)
-            .count(statistics::AVERAGE_REQUEST_TIME, handler.elapsed);
+            .record(Statistic::Average(Average {
+                count: 1,
+                average: handler.elapsed,
+            }))
+            .record(Statistic::Request(handler.into()));
+    }
+}
+
+impl From<Handler> for Request {
+    fn from(handler: Handler) -> Request {
+        Request {
+            client: handler.client,
+            question: handler.question,
+            answers: handler.answers,
+            rule: handler.rule,
+            status: handler.status,
+            elapsed: handler.elapsed,
+            timestamp: handler.timestamp,
+        }
     }
 }
