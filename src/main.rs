@@ -5,30 +5,35 @@ use std::{
 
 use blackhole::server::udp;
 use tracing::{error, metadata::LevelFilter};
-use tracing_subscriber::EnvFilter;
 
 fn enable_tracing() {
+    let level = if let Ok(level) = std::env::var("LOG_LEVEL") {
+        match level.to_ascii_lowercase().as_str() {
+            "error" => LevelFilter::ERROR,
+            "warn" => LevelFilter::WARN,
+            "info" => LevelFilter::INFO,
+            "trace" => LevelFilter::TRACE,
+            _ => LevelFilter::ERROR,
+        }
+    } else {
+        if cfg!(debug_assertions) {
+            LevelFilter::TRACE
+        } else {
+            LevelFilter::ERROR
+        }
+    };
+
     if cfg!(debug_assertions) {
         tracing_subscriber::fmt()
             .pretty()
-            .with_env_filter(
-                EnvFilter::builder()
-                    .with_default_directive(LevelFilter::TRACE.into())
-                    .with_env_var("LOG_LEVEL")
-                    .from_env_lossy(),
-            )
+            .with_max_level(level)
             .init();
     } else {
         tracing_subscriber::fmt()
             .pretty()
             .with_file(false)
             .with_line_number(false)
-            .with_env_filter(
-                EnvFilter::builder()
-                    .with_default_directive(LevelFilter::INFO.into())
-                    .with_env_var("LOG_LEVEL")
-                    .from_env_lossy(),
-            )
+            .with_max_level(level)
             .init();
     }
 }
