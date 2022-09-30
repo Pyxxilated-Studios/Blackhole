@@ -1,9 +1,12 @@
-use blackhole::dns::{
-    header::Header,
-    packet::{Buffer, Packet},
-    qualified_name::QualifiedName,
-    question::Question,
-    QueryType, Record, ResultCode,
+use blackhole::{
+    dns::{
+        header::Header,
+        packet::{Buffer, Packet},
+        qualified_name::QualifiedName,
+        question::Question,
+        QueryType, Record, ResultCode,
+    },
+    filter::Filter,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
@@ -101,5 +104,67 @@ pub fn buffer_to_packet(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, packet_to_buffer, buffer_to_packet);
+pub fn parse_filter_line(c: &mut Criterion) {
+    c.bench_function("Add a filter line", |b| {
+        let mut filter = Filter::default();
+        b.iter(|| filter.parse_line("||www.example.com"))
+    });
+}
+
+pub fn check_filter(c: &mut Criterion) {
+    c.bench_function("Check the filter", |b| {
+        let mut filter = Filter::default();
+        filter.parse_line("||example.com");
+        filter.parse_line("||www.example.com");
+        let packet = Packet {
+            header: Header {
+                id: 56029,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: ResultCode::NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 2,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("example.com".to_owned()),
+                qtype: QueryType::MX,
+            }],
+            answers: vec![
+                Record::MX {
+                    domain: QualifiedName("example.com".to_owned()),
+                    priority: 10,
+                    host: QualifiedName("mail.example.com".to_owned()),
+                    ttl: 3600.into(),
+                },
+                Record::MX {
+                    domain: QualifiedName("example.com".to_owned()),
+                    priority: 20,
+                    host: QualifiedName("mailsec.example.com".to_owned()),
+                    ttl: 3600.into(),
+                },
+            ],
+            authorities: vec![],
+            resources: vec![],
+        };
+
+        b.iter(|| black_box(filter.check(&packet)))
+    });
+}
+
+criterion_group!(
+    benches,
+    packet_to_buffer,
+    buffer_to_packet,
+    parse_filter_line,
+    check_filter
+);
 criterion_main!(benches);
