@@ -80,8 +80,8 @@ jobs:
             latest=false
           tags: |
             type=raw,value=alpine
-            type=ref,event=tag,suffix=alpine-
-            type=semver,pattern={{version}},suffix=alpine-
+            type=ref,event=tag,prefix=alpine-
+            type=semver,pattern={{version}},prefix=alpine-
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v3.1.1
