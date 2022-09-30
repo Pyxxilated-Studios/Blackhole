@@ -1,12 +1,13 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use chrono::prelude::*;
+use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
 use crate::{
-    dns::{question::Question, Record, ResultCode},
+    dns::Record as Answer,
+    dns::{question::Question, ResultCode},
     filter::Rule,
 };
 
@@ -14,46 +15,97 @@ lazy_static! {
     pub static ref STATISTICS: Arc<RwLock<Statistics>> = Arc::default();
 }
 
-#[derive(Debug, Serialize, Clone)]
+pub const REQUEST: &str = "requests";
+pub const AVERAGE_REQUEST_TIME: &str = "average";
+
+impl Statistic {
+    fn record(self, stats: &mut HashMap<&'static str, Statistic>) {
+        match self {
+            Statistic::Count(count) => match stats
+                .entry(AVERAGE_REQUEST_TIME)
+                .or_insert(Statistic::Count(0))
+            {
+                Statistic::Count(c) => {
+                    *c += count;
+                }
+                _ => unreachable!(),
+            },
+            Statistic::Average(average) => {
+                match stats
+                    .entry(AVERAGE_REQUEST_TIME)
+                    .or_insert_with(|| Statistic::Average(Average::default()))
+                {
+                    Statistic::Average(av) => {
+                        let count = av.count + average.count;
+                        av.average =
+                            (av.average * av.count + average.count * average.average) / count;
+                        av.count = count;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Statistic::Request(request) => match stats
+                .entry(REQUEST)
+                .or_insert(Statistic::Requests(Vec::new()))
+            {
+                Statistic::Requests(r) => r.push(request),
+                _ => unreachable!(),
+            },
+            Statistic::Requests(requests) => match stats
+                .entry(REQUEST)
+                .or_insert(Statistic::Requests(Vec::new()))
+            {
+                Statistic::Requests(r) => r.extend(requests.into_iter()),
+                _ => unreachable!(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Clone, Default)]
+pub struct Average {
+    pub count: usize,
+    pub average: usize,
+}
+
+#[derive(Serialize, Clone, Default)]
 pub struct Request {
     pub client: String,
     pub question: Question,
-    pub answers: Vec<Record>,
+    pub answers: Vec<Answer>,
     pub rule: Option<Rule>,
     pub status: ResultCode,
     pub elapsed: usize,
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Clone)]
 pub enum Statistic {
+    Count(usize),
+    Average(Average),
     Request(Request),
-    Value(usize),
+    Requests(Vec<Request>),
 }
 
 #[derive(Default)]
 pub struct Statistics {
-    statistics: Vec<Statistic>,
+    statistics: HashMap<&'static str, Statistic>,
 }
 
 impl Statistics {
-    pub fn record<S>(&mut self, stat: S)
-    where
-        Statistic: From<S>,
-    {
-        self.statistics.push(stat.into());
+    #[inline]
+    pub fn record(&mut self, value: Statistic) -> &mut Statistics {
+        value.record(&mut self.statistics);
+        self
     }
 
-    pub fn requests(&self) -> Vec<Request> {
-        self.statistics
-            .iter()
-            .filter_map(|stat| {
-                if let Statistic::Request(req) = stat {
-                    Some(req.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
+    #[inline]
+    pub fn retrieve(&self, statistic: &str) -> Option<&Statistic> {
+        self.statistics.get(statistic)
+    }
+
+    #[inline]
+    pub fn statistics(&self) -> &HashMap<&'static str, Statistic> {
+        &self.statistics
     }
 }

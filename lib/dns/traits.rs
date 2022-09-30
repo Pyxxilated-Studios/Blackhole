@@ -12,7 +12,7 @@ pub trait WriteTo<'a, T: IO> {
     /// where it is nice to chain writes.
     ///
     /// # Errors
-    /// This could fail for many reasons, this simplest being that
+    /// This could fail for many reasons, the simplest being that
     /// writing the element to the buffer caused it to overflow its
     /// internal buffer
     ///
@@ -50,7 +50,7 @@ pub trait IO {
     /// If the position is past the end of the buffers internal
     /// state.
     ///
-    fn get(&mut self, pos: usize) -> Result<u8>;
+    fn get(&self, pos: usize) -> Result<u8>;
 
     ///
     /// Set a byte at a specific position
@@ -71,7 +71,7 @@ pub trait IO {
     /// If the number of elements wanted causes the buffer to read
     /// past its internal state.
     ///
-    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]>;
+    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]>;
 
     ///
     /// Read out an element from the buffer
@@ -123,6 +123,7 @@ macro_rules! impl_try_from {
         $(impl TryFrom<&mut Buffer> for $t  {
             type Error = DNSError;
 
+            #[inline]
             fn try_from(buffer: &mut Buffer) -> Result<$t> {
                 let res = <$t>::from_be_bytes(std::array::try_from_fn(|_| buffer.read())?);
 
@@ -147,12 +148,14 @@ impl_write!(u8, u16, u32, u64, u128, usize);
 impl_try_from!(u16, u32, u64, u128, usize);
 
 impl<'a, T: IO> WriteTo<'a, T> for &[u8] {
+    #[inline]
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
     }
 }
 
 impl<'a, T: IO, const N: usize> WriteTo<'a, T> for &[u8; N] {
+    #[inline]
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
     }
@@ -162,6 +165,7 @@ impl<'a, T: IO, E> WriteTo<'a, T> for Vec<E>
 where
     E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
+    #[inline]
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
     }

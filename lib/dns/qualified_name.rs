@@ -10,6 +10,7 @@ use crate::dns::{
 pub struct QualifiedName(pub String);
 
 impl QualifiedName {
+    #[inline]
     pub fn name(&self) -> String {
         self.0.clone()
     }
@@ -32,6 +33,7 @@ impl<'a, T: IO> WriteTo<'a, T> for &QualifiedName {
 }
 
 impl<'a> From<&'a QualifiedName> for &'a str {
+    #[inline]
     fn from(qn: &'a QualifiedName) -> Self {
         &qn.0
     }
