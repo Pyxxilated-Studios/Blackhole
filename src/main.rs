@@ -9,18 +9,15 @@ use tracing::{error, metadata::LevelFilter};
 fn enable_tracing() {
     let level = if let Ok(level) = std::env::var("LOG_LEVEL") {
         match level.to_ascii_lowercase().as_str() {
-            "error" => LevelFilter::ERROR,
             "warn" => LevelFilter::WARN,
             "info" => LevelFilter::INFO,
             "trace" => LevelFilter::TRACE,
             _ => LevelFilter::ERROR,
         }
+    } else if cfg!(debug_assertions) {
+        LevelFilter::TRACE
     } else {
-        if cfg!(debug_assertions) {
-            LevelFilter::TRACE
-        } else {
-            LevelFilter::ERROR
-        }
+        LevelFilter::ERROR
     };
 
     if cfg!(debug_assertions) {
