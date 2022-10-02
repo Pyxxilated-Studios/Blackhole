@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { page } from "$app/stores";
     import { onMount, onDestroy } from "svelte";
 
     type MX = { MX: { ttl: number; host: string; priority: number } };
@@ -25,12 +24,18 @@
 
     const refetch = async () => {
         try {
-            const resp = await fetch(`${$page.url.origin}/api/requests`);
-            const json = await resp.json();
-            requests = (json as Requests).sort(
-                (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-            error = undefined;
+            const resp = await fetch("/api/statistics/requests");
+            console.debug("RESP: ", resp);
+            if (resp.ok) {
+                const json = await resp.json();
+                console.debug("JSON: ", json);
+                requests = (json.Requests as Requests).sort(
+                    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                );
+                error = undefined;
+            } else {
+                error = resp.statusText;
+            }
         } catch (err: unknown) {
             error = err;
         }
