@@ -21,13 +21,9 @@ fn enable_tracing() {
     };
 
     if cfg!(debug_assertions) {
-        tracing_subscriber::fmt()
-            .pretty()
-            .with_max_level(level)
-            .init();
+        tracing_subscriber::fmt().with_max_level(level).init();
     } else {
         tracing_subscriber::fmt()
-            .pretty()
             .with_file(false)
             .with_line_number(false)
             .with_max_level(level)

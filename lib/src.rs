@@ -2,7 +2,8 @@
     array_try_from_fn,
     associated_type_defaults,
     async_closure,
-    min_specialization
+    min_specialization,
+    once_cell
 )]
 
 pub mod api;

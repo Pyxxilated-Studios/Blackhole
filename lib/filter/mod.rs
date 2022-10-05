@@ -1,19 +1,16 @@
 use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
-use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::{info, instrument};
 
 use crate::dns;
 
-lazy_static! {
-    pub static ref FILTERS: Arc<RwLock<Filter>> = Arc::default();
-}
+pub static FILTERS: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
 const COMMENT_CHARS: [char; 2] = ['!', '#'];
 
