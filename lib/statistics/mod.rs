@@ -1,7 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
@@ -11,9 +13,7 @@ use crate::{
     filter::Rule,
 };
 
-lazy_static! {
-    pub static ref STATISTICS: Arc<RwLock<Statistics>> = Arc::default();
-}
+pub static STATISTICS: LazyLock<Arc<RwLock<Statistics>>> = LazyLock::new(Arc::default);
 
 pub const REQUEST: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";

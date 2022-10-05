@@ -1,13 +1,12 @@
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     task::Poll,
     time::Instant,
 };
 
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::{
     net::UdpSocket,
@@ -33,13 +32,13 @@ struct Connector(Vec<RwLock<u16>>);
 
 impl Unpin for Connector {}
 
-lazy_static! {
-    static ref PORTS: Connector = Connector(
+static PORTS: LazyLock<Connector> = LazyLock::new(|| {
+    Connector(
         (0..CONNECTOR_COUNT)
             .map(|v| RwLock::new(40000 + v))
-            .collect()
-    );
-}
+            .collect(),
+    )
+});
 
 impl<'a> Future for &'a Connector {
     type Output = RwLockWriteGuard<'a, u16>;
