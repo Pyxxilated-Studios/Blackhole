@@ -9,13 +9,6 @@ on:
       - "*.md"
       - ".*ignore"
       - "benches/**"
-  pull_request:
-    branches: ["main"]
-    paths-ignore:
-      - ".github/ISSUE_TEMPLATE/**"
-      - "*.md"
-      - ".*ignore"
-      - "benches/**"
 
 env:
   REGISTRY: ghcr.io
