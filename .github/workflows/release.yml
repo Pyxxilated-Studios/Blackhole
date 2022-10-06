@@ -45,7 +45,7 @@ jobs:
       - name: Get Prefix
         id: prefix
         run: |
-          FILE="Dockerfile"
+          FILE=${{ matrix.file }}
           PREFIX=${FILE##*.}
           if [ ${PREFIX} = "Dockerfile" ]
           then
@@ -62,6 +62,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
             prefix=${{ steps.prefix.outputs.PREFIX }}
+            prefixLatest=true
           tags: |
             type=ref,event=tag,
             type=semver,pattern={{version}}
