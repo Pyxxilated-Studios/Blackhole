@@ -61,8 +61,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
-            prefix=${{ steps.prefix.outputs.PREFIX }}
-            prefixLatest=true
+            prefix=${{ steps.prefix.outputs.PREFIX }},onlatest=true
           tags: |
             type=ref,event=tag,
             type=semver,pattern={{version}}
