@@ -20,7 +20,6 @@ jobs:
 
     strategy:
       matrix:
-        platform: [linux/amd64, linux/arm64]
         file: [Dockerfile, Dockerfile.alpine]
 
     permissions:
@@ -75,4 +74,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64,linux/arm64
