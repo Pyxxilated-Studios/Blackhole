@@ -17,7 +17,9 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
+async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = [ "clock", "serde" ] }
+clap = { version = "4" , features = [ "derive" ] }
 criterion = { version = "0.4", default-features = false, features = [ "html_reports", "real_blackbox" ] }
 num = { version = "0.4.0", default-features = false }
 opentelemetry = { version = "0.18", default-features = false, features = [ "rt-tokio" ] }
@@ -25,6 +27,7 @@ serde = { version = "1", default-features = false, features = [ "derive" ] }
 serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", default-features = false, features = [ "net", "macros", "parking_lot", "rt-multi-thread", "tracing" ] }
+toml = "0.5"
 tracing = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
 tracing-opentelemetry = "0.18"
 tracing-subscriber = { version = "0.3", default-features = false, features =  [ "fmt", "parking_lot", "smallvec", "tracing-log" ] }
