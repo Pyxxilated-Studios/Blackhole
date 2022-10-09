@@ -84,7 +84,7 @@ impl IO for Buffer {
         if start + len >= DNS_PACKET_SIZE {
             Err(DNSError::EndOfBuffer)
         } else {
-            Ok(&self.buffer[start..start + len as usize])
+            Ok(&self.buffer[start..start + len])
         }
     }
 
