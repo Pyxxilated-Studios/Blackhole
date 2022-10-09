@@ -11,7 +11,7 @@ RUN yarn build
 
 FROM rust:alpine as server
 
-RUN apk add musl-dev
+RUN apk add musl-dev pkgconfig
 RUN rustup default nightly
 
 RUN USER=root cargo new --bin blackhole
