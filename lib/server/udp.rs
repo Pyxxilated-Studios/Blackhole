@@ -15,6 +15,7 @@ use tokio::{
 use tracing::{error, info, instrument};
 
 use crate::{
+    config::Config,
     dns::{
         packet::{Buffer, Packet},
         qualified_name::QualifiedName,
@@ -221,7 +222,7 @@ impl Handler {
 
     #[instrument(skip(self, packet))]
     async fn forward(&mut self, packet: Packet) -> Result<Packet> {
-        const SERVER: (&str, u16) = ("192.168.1.123", 53);
+        let server = Config::get(|config| config.upstreams.iter().next().unwrap().clone()).await;
 
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, *(&*PORTS).await)).await?;
 
@@ -230,7 +231,7 @@ impl Handler {
         let buffer = Buffer::try_from(packet)?;
 
         forwarder
-            .send_to(&buffer.buffer()[0..buffer.pos()], SERVER)
+            .send_to(&buffer.buffer()[0..buffer.pos()], (server.ip, server.port))
             .await?;
 
         let mut res_buffer = Buffer::default();

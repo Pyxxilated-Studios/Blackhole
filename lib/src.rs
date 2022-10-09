@@ -7,6 +7,7 @@
 )]
 
 pub mod api;
+pub mod config;
 pub mod dns;
 pub mod filter;
 pub mod server;
