@@ -1,14 +1,19 @@
 use std::{
-    collections::HashMap,
-    io::{self, BufRead, BufReader},
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    io::{BufRead, BufReader},
     sync::{Arc, LazyLock},
 };
 
 use serde::Serialize;
+use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
-use crate::dns;
+use crate::{
+    config::{self, FilterList},
+    dns,
+};
 
 pub static FILTERS: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
@@ -46,7 +51,46 @@ pub struct Filter {
     pub(crate) rules: Rules,
 }
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    RequestError(#[from] reqwest::Error),
+}
+
 impl Filter {
+    #[instrument(level = "info")]
+    pub async fn update() {
+        let filters = config::Config::get(|config| config.filters.clone()).await;
+
+        for filter in filters {
+            info!("Fetching {}", filter.url);
+            if let Err(err) = Self::download(filter).await {
+                error!("{err}");
+            }
+        }
+    }
+
+    async fn download(filter: FilterList) -> Result<(), Error> {
+        let client = reqwest::Client::builder().brotli(true).build().unwrap();
+
+        let response = client.get(&filter.url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::from(response.error_for_status().expect_err("")));
+        }
+
+        let contents = response.text().await?;
+
+        let mut hasher = DefaultHasher::new();
+        filter.hash(&mut hasher);
+        let file = format!("{}.txt", hasher.finish());
+        std::fs::write(file.clone(), contents)?;
+
+        Self::load(&file).await
+    }
+
     pub fn parse_line(&mut self, line: &str) {
         if COMMENT_CHARS.iter().any(|&c| line.starts_with(c)) {
             return;
@@ -94,29 +138,33 @@ impl Filter {
     /// # Errors
     /// If it fails to open the list
     ///
-    #[instrument(skip(self, list))]
-    pub fn load(&mut self, list: &str) -> io::Result<()> {
+    #[instrument(skip(list), err)]
+    pub async fn load(list: &str) -> Result<(), Error> {
+        let mut filters = FILTERS.write().await;
+
         info!("loading filter list: {list}");
         let file = std::fs::File::open(list)?;
 
-        self.parse(BufReader::new(file));
+        filters.parse(BufReader::new(file));
 
-        self.lists.push(list.to_string());
+        filters.lists.push(list.to_string());
 
         Ok(())
     }
 
     pub fn check(&self, packet: &dns::packet::Packet) -> Option<Rule> {
-        let mut current_node = &self.rules;
-
-        for entry in packet.questions[0].name.name().split('.').rev() {
-            match current_node.children.get(entry) {
-                Some(entry) => current_node = entry,
-                None => break,
-            }
-        }
-
-        current_node.rule.clone()
+        packet.questions[0]
+            .name
+            .name()
+            .split('.')
+            .rev()
+            .try_fold(&self.rules, |current_node, entry| {
+                match current_node.children.get(entry) {
+                    Some(entry) => Ok(entry),
+                    None => Err(current_node),
+                }
+            })
+            .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
     }
 }
 

@@ -50,10 +50,6 @@ async fn main() {
         .unwrap();
     blackhole::config::Config::load(cli_config).await.unwrap();
 
-    let config = blackhole::config::CONFIG.read().await;
-
-    println!("{config:#?}");
-
     let udp_v4_server = match udp::Server::builder()
         .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
         .on(6380)
@@ -62,7 +58,7 @@ async fn main() {
     {
         Ok(server) => Arc::new(server),
         Err(err) => {
-            error!("{err:?}");
+            error!("{err}");
             return;
         }
     };
@@ -75,21 +71,17 @@ async fn main() {
     {
         Ok(server) => Arc::new(server),
         Err(err) => {
-            error!("{err:?}");
+            error!("{err}");
             return;
         }
     };
-
-    blackhole::filter::FILTERS
-        .write()
-        .await
-        .load("target/filters.txt")
-        .unwrap_or_default();
 
     let udp_v4_server = tokio::spawn(async move { udp_v4_server.run().await });
     let udp_v6_server = tokio::spawn(async move { udp_v6_server.run().await });
 
     let api_server = tokio::spawn(async move { blackhole::api::server::Server.run().await });
+
+    blackhole::filter::Filter::update().await;
 
     let _joins = tokio::join!(udp_v4_server, udp_v6_server, api_server);
 }
