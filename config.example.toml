@@ -1,0 +1,8 @@
+
+[[upstream]]
+ip = "1.1.1.1"
+port = 53
+
+[[filter]]
+name = "Test"
+url = "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/BaseFilter/sections/adservers.txt"

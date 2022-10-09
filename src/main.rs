@@ -1,9 +1,13 @@
+mod cli;
+
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
     sync::Arc,
 };
 
 use blackhole::server::udp;
+use clap::Parser;
 use tracing::{error, metadata::LevelFilter};
 
 fn enable_tracing() {
@@ -35,7 +39,21 @@ fn enable_tracing() {
 async fn main() {
     enable_tracing();
 
-    // let listener = TcpListener::bind("0.0.0.0:0379").await?;
+    let cli_config = cli::Cli::parse();
+    let default_path = cli_config
+        .config
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("/config/blackhole.toml"));
+
+    blackhole::config::Config::load(default_path.as_path())
+        .await
+        .unwrap();
+    blackhole::config::Config::load(cli_config).await.unwrap();
+
+    let config = blackhole::config::CONFIG.read().await;
+
+    println!("{config:#?}");
+
     let udp_v4_server = match udp::Server::builder()
         .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
         .on(6380)
