@@ -162,9 +162,9 @@
     rollup "^2.78.1"
 
 "@sveltejs/kit@next":
-  version "1.0.0-next.509"
-  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.0.0-next.509.tgz#eaf822da8cb1f9a371ac208fcc5412127a4f89a5"
-  integrity sha512-PKynROFwayitCsMw1ZRtf7ezoI9YzWbQxAQy0NskNUSWf7iUo1ng7Qd/bB5VpFqKIrjgi/nWl8hriaemkit2Vg==
+  version "1.0.0-next.511"
+  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.0.0-next.511.tgz#d045d0737ec93d21de5a27b6ca619daf79f8e4f7"
+  integrity sha512-A/fxd4qHWDD07Mjo6qEEEfsBEkoj5C4/dPSzx6xPUoWmPvRPhU8t+P0oMc8BOn5YHOhPDq3coH8bmafbh73zKg==
   dependencies:
     "@sveltejs/vite-plugin-svelte" "^1.0.5"
     "@types/cookie" "^0.5.1"
