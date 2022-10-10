@@ -4,7 +4,7 @@ WORKDIR /client
 
 # Generate cached dependencies
 COPY ./client/package.json ./client/yarn.lock ./
-RUN yarn install
+RUN yarn install --network-timeout 600000
 
 COPY ./client .
 RUN yarn build
