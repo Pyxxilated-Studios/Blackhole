@@ -11,6 +11,8 @@ RUN yarn build
 
 FROM rust:slim as server
 
+RUN apt install pkg-config libssl-dev
+RUN rustup set profile minimal
 RUN rustup default nightly
 
 RUN USER=root cargo new --bin blackhole
