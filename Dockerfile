@@ -11,7 +11,7 @@ RUN yarn build
 
 FROM rust:slim as server
 
-RUN apt install pkg-config libssl-dev
+RUN apt update && apt install -y pkg-config libssl-dev
 RUN rustup set profile minimal
 RUN rustup default nightly
 
