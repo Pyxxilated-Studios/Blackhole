@@ -10,6 +10,15 @@ pub struct Cli {
     #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
     pub config: Option<PathBuf>,
 
+    #[arg(
+        short,
+        long,
+        value_name = "PORT",
+        help = "Port to have the server listen on",
+        default_value_t = 53
+    )]
+    pub port: u16,
+
     #[arg(short, long = "upstream", value_name = "UPSTREAM")]
     upstreams: Vec<Upstream>,
 }

@@ -59,11 +59,27 @@ pub struct FilterList {
 
 #[async_trait]
 pub trait Load {
+    ///
+    /// Load a configuration profile, which could be something like
+    /// a path (e.g. a configuration file), or CLI arguments
+    ///
+    /// # Errors
+    /// This may error in several cases, which should be documented
+    /// in the implementation.
+    ///
     async fn load(self, config: &mut Config) -> std::io::Result<()>;
 }
 
 #[async_trait]
 impl Load for &Path {
+    ///
+    /// Load a file (e.g. Configuration file)
+    ///
+    /// # Errors
+    /// Should the file not exist in readable form, this will fail. If the file also
+    /// isn't valid toml this will fail.
+    ///
+    #[instrument(level = "info", ret, err, skip(self, config), fields(file = self.to_str()))]
     async fn load(self, config: &mut Config) -> std::io::Result<()> {
         *CONFIG_FILE.write().await = self.to_string_lossy().to_string();
 
@@ -78,7 +94,13 @@ impl Load for &Path {
 }
 
 impl Config {
-    #[instrument(level = "info", ret, err)]
+    ///
+    /// Load a configuration profile
+    ///
+    /// # Errors
+    /// This can fail if the configuration profile fails to load,
+    /// see [`Load`]
+    ///
     pub async fn load<C: Load + Debug>(loader: C) -> std::io::Result<()> {
         let mut config = CONFIG.write().await;
         loader.load(&mut config).await?;

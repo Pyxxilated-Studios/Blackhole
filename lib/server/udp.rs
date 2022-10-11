@@ -1,17 +1,12 @@
 use std::{
-    future::Future,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, LazyLock},
-    task::Poll,
+    sync::Arc,
     time::Instant,
 };
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tokio::{
-    net::UdpSocket,
-    sync::{RwLock, RwLockWriteGuard},
-};
+use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -26,34 +21,6 @@ use crate::{
     filter::{Kind, Rule, FILTERS},
     statistics::{Average, Request, Statistic, STATISTICS},
 };
-
-const CONNECTOR_COUNT: u16 = 10;
-
-struct Connector(Vec<RwLock<u16>>);
-
-impl Unpin for Connector {}
-
-static PORTS: LazyLock<Connector> = LazyLock::new(|| {
-    Connector(
-        (0..CONNECTOR_COUNT)
-            .map(|v| RwLock::new(40000 + v))
-            .collect(),
-    )
-});
-
-impl<'a> Future for &'a Connector {
-    type Output = RwLockWriteGuard<'a, u16>;
-
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        self.0
-            .iter()
-            .find_map(|port| port.try_write().ok())
-            .map_or(Poll::Pending, Poll::Ready)
-    }
-}
 
 pub struct ServerBuilder {
     port: u16,
@@ -224,7 +191,7 @@ impl Handler {
     async fn forward(&mut self, packet: Packet) -> Result<Packet> {
         let server = Config::get(|config| config.upstreams.iter().next().unwrap().clone()).await;
 
-        let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, *(&*PORTS).await)).await?;
+        let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
 
         self.question = packet.questions[0].clone();
 
