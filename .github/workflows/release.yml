@@ -52,7 +52,7 @@ jobs:
           else
               PREFIX="${PREFIX}-"
           fi
-          echo "::set-output name=PREFIX::$PREFIX"
+          echo "PREFIX=$PREFIX" >> $GITHUB_OUTPUT
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
