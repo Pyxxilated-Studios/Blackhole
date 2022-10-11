@@ -1,8 +1,8 @@
 
 [[upstream]]
-ip = "1.1.1.1"
+ip = "9.9.9.9"
 port = 53
 
 [[filter]]
-name = "Test"
+name = "Adguard"
 url = "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/BaseFilter/sections/adservers.txt"

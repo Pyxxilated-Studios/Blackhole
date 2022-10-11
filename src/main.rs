@@ -1,9 +1,8 @@
 mod cli;
 
 use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv6Addr},
     path::PathBuf,
-    sync::Arc,
 };
 
 use blackhole::server::udp;
@@ -37,51 +36,36 @@ fn enable_tracing() {
 
 #[tokio::main]
 async fn main() {
+    let cli = cli::Cli::parse();
+
     enable_tracing();
 
-    let cli_config = cli::Cli::parse();
-    let default_path = cli_config
-        .config
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("/config/blackhole.toml"));
-
-    blackhole::config::Config::load(default_path.as_path())
-        .await
-        .unwrap();
-    blackhole::config::Config::load(cli_config).await.unwrap();
-
-    let udp_v4_server = match udp::Server::builder()
-        .listen(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-        .on(6380)
-        .build()
-        .await
-    {
-        Ok(server) => Arc::new(server),
-        Err(err) => {
-            error!("{err}");
-            return;
-        }
-    };
-
-    let udp_v6_server = match udp::Server::builder()
+    let udp_server = match udp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
-        .on(6379)
+        .on(cli.port)
         .build()
         .await
     {
-        Ok(server) => Arc::new(server),
+        Ok(server) => tokio::spawn(async move { server.run().await }),
         Err(err) => {
             error!("{err}");
             return;
         }
     };
 
-    let udp_v4_server = tokio::spawn(async move { udp_v4_server.run().await });
-    let udp_v6_server = tokio::spawn(async move { udp_v6_server.run().await });
+    blackhole::config::Config::load(
+        cli.config
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("/config/blackhole.toml"))
+            .as_path(),
+    )
+    .await
+    .unwrap();
+    blackhole::config::Config::load(cli).await.unwrap();
 
     let api_server = tokio::spawn(async move { blackhole::api::server::Server.run().await });
 
     blackhole::filter::Filter::update().await;
 
-    let _joins = tokio::join!(udp_v4_server, udp_v6_server, api_server);
+    let _joins = tokio::join!(udp_server, api_server);
 }
