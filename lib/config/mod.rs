@@ -51,10 +51,19 @@ impl FromStr for Upstream {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilterList {
     pub name: String,
     pub url: String,
+    #[serde(skip)]
+    pub entries: usize,
+}
+
+impl std::hash::Hash for FilterList {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.url.hash(state);
+    }
 }
 
 #[async_trait]

@@ -18,7 +18,7 @@ use crate::{
         traits::IO,
         QueryType, Record, Result, ResultCode, Ttl,
     },
-    filter::{Kind, Rule, FILTERS},
+    filter::{Kind, Rule, FILTER},
     statistics::{Average, Request, Statistic, STATISTICS},
 };
 
@@ -208,7 +208,7 @@ impl Handler {
     }
 
     async fn filter(&mut self, packet: Packet) -> Result<Packet> {
-        match FILTERS.read().await.check(&packet) {
+        match FILTER.read().await.check(&packet) {
             Some(rule) if rule.ty == Kind::Allow => {
                 self.rule = Some(rule);
                 self.forward(packet).await
@@ -227,7 +227,17 @@ impl Handler {
                         packet.header.answers = 1;
                         packet.answers = vec![Record::A {
                             domain: QualifiedName(packet.questions[0].name.name()),
-                            addr: Ipv4Addr::UNSPECIFIED,
+                            addr: match rule
+                                .action
+                                .clone()
+                                .map_or(Some(IpAddr::V4(Ipv4Addr::UNSPECIFIED)), |action| {
+                                    action.rewrite
+                                })
+                                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+                            {
+                                IpAddr::V4(addr) => addr,
+                                IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
+                            },
                             ttl: Ttl(10),
                         }];
                     }
@@ -238,7 +248,17 @@ impl Handler {
                         packet.header.answers = 1;
                         packet.answers = vec![Record::AAAA {
                             domain: QualifiedName(packet.questions[0].name.name()),
-                            addr: Ipv6Addr::UNSPECIFIED,
+                            addr: match rule
+                                .action
+                                .clone()
+                                .map_or(Some(IpAddr::V6(Ipv6Addr::UNSPECIFIED)), |action| {
+                                    action.rewrite
+                                })
+                                .unwrap_or(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
+                            {
+                                IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
+                                IpAddr::V6(addr) => addr,
+                            },
                             ttl: Ttl(10),
                         }];
                     }
