@@ -1,7 +1,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     hash::{Hash, Hasher},
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     str::FromStr,
     sync::{Arc, LazyLock},
@@ -24,9 +24,15 @@ pub static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
+#[derive(Debug, Clone, Serialize, PartialEq, PartialOrd)]
+pub struct Rewrite {
+    pub v4: IpAddr,
+    pub v6: IpAddr,
+}
+
 #[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub(crate) struct Action {
-    pub rewrite: Option<IpAddr>,
+    pub rewrite: Option<Rewrite>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
@@ -220,8 +226,8 @@ impl Filter {
     }
 
     fn insert(&mut self, entry: Type) {
-        let (action, ty, domain) = match entry {
-            Type::Host(ip, domain) => (Some(Action { rewrite: Some(ip) }), Kind::Deny, domain),
+        let (addr, ty, domain) = match entry {
+            Type::Host(ip, domain) => (Some(ip), Kind::Deny, domain),
             Type::Domain(domain) => (None, Kind::Deny, domain),
             Type::Adblock(kind, ty) => match *ty {
                 Type::Domain(domain) => (None, kind, domain),
@@ -237,7 +243,59 @@ impl Filter {
                 current_node.children.entry(part.to_string()).or_default()
             });
 
-        node.rule = Some(Rule { domain, ty, action });
+        let mut rule = node.rule.clone().unwrap_or(Rule {
+            domain,
+            ty,
+            action: None,
+        });
+
+        if let Some(ref mut action) = rule.action {
+            if let Some(ref mut re) = action.rewrite {
+                match addr {
+                    None => (),
+                    Some(addr @ IpAddr::V4(_)) => re.v4 = addr,
+                    Some(addr @ IpAddr::V6(_)) => re.v6 = addr,
+                }
+            } else {
+                match addr {
+                    None => (),
+                    Some(addr @ IpAddr::V4(_)) => {
+                        action.rewrite = Some(Rewrite {
+                            v4: addr,
+                            v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                        });
+                    }
+                    Some(addr @ IpAddr::V6(_)) => {
+                        action.rewrite = Some(Rewrite {
+                            v6: addr,
+                            v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                        });
+                    }
+                }
+            }
+        } else {
+            match addr {
+                None => (),
+                Some(addr @ IpAddr::V4(_)) => {
+                    rule.action = Some(Action {
+                        rewrite: Some(Rewrite {
+                            v4: addr,
+                            v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                        }),
+                    });
+                }
+                Some(addr @ IpAddr::V6(_)) => {
+                    rule.action = Some(Action {
+                        rewrite: Some(Rewrite {
+                            v6: addr,
+                            v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                        }),
+                    });
+                }
+            }
+        }
+
+        node.rule = Some(rule);
     }
 
     ///

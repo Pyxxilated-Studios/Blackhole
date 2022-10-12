@@ -18,7 +18,7 @@ use crate::{
         traits::IO,
         QueryType, Record, Result, ResultCode, Ttl,
     },
-    filter::{Kind, Rule, FILTER},
+    filter::{Kind, Rewrite, Rule, FILTER},
     statistics::{Average, Request, Statistic, STATISTICS},
 };
 
@@ -230,10 +230,12 @@ impl Handler {
                             addr: match rule
                                 .action
                                 .clone()
-                                .map_or(Some(IpAddr::V4(Ipv4Addr::UNSPECIFIED)), |action| {
-                                    action.rewrite
+                                .and_then(|action| action.rewrite)
+                                .unwrap_or(Rewrite {
+                                    v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                                    v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
                                 })
-                                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+                                .v4
                             {
                                 IpAddr::V4(addr) => addr,
                                 IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
@@ -251,10 +253,12 @@ impl Handler {
                             addr: match rule
                                 .action
                                 .clone()
-                                .map_or(Some(IpAddr::V6(Ipv6Addr::UNSPECIFIED)), |action| {
-                                    action.rewrite
+                                .and_then(|action| action.rewrite)
+                                .unwrap_or(Rewrite {
+                                    v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                                    v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
                                 })
-                                .unwrap_or(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
+                                .v6
                             {
                                 IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
                                 IpAddr::V6(addr) => addr,
