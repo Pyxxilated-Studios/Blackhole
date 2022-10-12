@@ -11,9 +11,11 @@ RUN yarn build
 
 FROM rust:slim as server
 
-RUN apt update && apt install -y pkg-config libssl-dev
+RUN apt update && apt install -y pkg-config libssl-dev git
 RUN rustup set profile minimal
 RUN rustup default nightly
+
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 RUN USER=root cargo new --bin blackhole
 WORKDIR /blackhole
