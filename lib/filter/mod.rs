@@ -1,10 +1,13 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     hash::{Hash, Hasher},
-    io::{BufRead, BufReader},
+    net::IpAddr,
+    path::Path,
+    str::FromStr,
     sync::{Arc, LazyLock},
 };
 
+use chumsky::{prelude::*, text::newline};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -15,21 +18,31 @@ use crate::{
     dns,
 };
 
-pub static FILTERS: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
+pub type Span = std::ops::Range<usize>;
 
-const COMMENT_CHARS: [char; 2] = ['!', '#'];
+pub static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
+
+const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub(crate) struct Action {
-    rewrite: Option<String>,
+    pub rewrite: Option<IpAddr>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
-pub(crate) enum Kind {
+pub enum Kind {
     Allow,
     Deny,
     #[default]
     None,
+}
+
+#[derive(Debug, Clone)]
+pub enum Type {
+    Host(IpAddr, String),
+    Domain(String),
+    Adblock(Kind, Box<Type>),
+    Ip(IpAddr),
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
@@ -47,7 +60,7 @@ pub struct Rules {
 
 #[derive(Default, Debug)]
 pub struct Filter {
-    pub(crate) lists: Vec<String>,
+    pub(crate) lists: HashSet<FilterList>,
     pub(crate) rules: Rules,
 }
 
@@ -57,6 +70,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     RequestError(#[from] reqwest::Error),
+    #[error("{0}")]
+    FilterError(String),
 }
 
 impl Filter {
@@ -88,48 +103,141 @@ impl Filter {
         let file = format!("{}.txt", hasher.finish());
         std::fs::write(file.clone(), contents)?;
 
-        Self::load(&file).await
+        Self::import(filter).await
     }
 
-    pub fn parse_line(&mut self, line: &str) {
-        if COMMENT_CHARS.iter().any(|&c| line.starts_with(c)) {
-            return;
-        }
+    fn lex() -> impl Parser<char, Vec<Type>, Error = Simple<char>> {
+        let comment = one_of("#!")
+            .then(take_until(newline().or(end())))
+            .labelled("Comment")
+            .padded();
 
-        let mut rule = Rule::default();
-
-        if let Some(domain) = line.strip_prefix("||") {
-            rule.domain = domain
-                .chars()
-                .take_while(|ch| ch.is_alphanumeric() || ['-', '_', '.'].contains(ch))
-                .collect();
-            rule.ty = Kind::Deny;
-        } else if let Some(domain) = line.strip_prefix("@@||") {
-            rule.domain = domain
-                .chars()
-                .take_while(|ch| ch.is_alphanumeric() || ['-', '_', '.'].contains(ch))
-                .collect();
-            rule.ty = Kind::Allow;
-        } else {
-            rule.domain = line.to_string();
-            rule.ty = Kind::Deny;
-        }
-
-        let mut current_node = &mut self.rules;
-
-        for domain in rule.domain.split('.').rev() {
-            current_node = current_node.children.entry(domain.to_string()).or_default();
-        }
-
-        current_node.rule = Some(rule);
-    }
-
-    pub fn parse(&mut self, buffer: BufReader<std::fs::File>) {
-        self.rules = Rules::default();
-
-        buffer.lines().filter_map(Result::ok).for_each(|line| {
-            self.parse_line(&line);
+        let part = one_of(DOMAIN_CHARS).repeated().at_least(1);
+        let domain = part.clone().separated_by(just('.')).at_least(1).map(|v| {
+            v.iter()
+                .map(|a| a.iter().collect::<String>())
+                .collect::<Vec<_>>()
+                .join(".")
         });
+
+        let domain = just('.')
+            .or_not()
+            .then(domain)
+            .then(just('.').or_not())
+            .labelled("Domain")
+            .map(|((a, b), c)| {
+                format!(
+                    "{}{b}{}",
+                    if a.is_some() { "." } else { "" },
+                    if c.is_some() { "." } else { "" }
+                )
+            });
+
+        let ip6_abbreviate = just("::").then(text::int::<_, Simple<char>>(16));
+        let ipv6_ = text::int::<_, Simple<char>>(16)
+            .then(just("::"))
+            .then(text::int(16));
+        let ipv6__ = text::int::<_, Simple<char>>(16)
+            .separated_by(just(":").ignored())
+            .at_most(8)
+            .at_least(2)
+            .then(text::int(16));
+
+        let ipv6 = ip6_abbreviate
+            .map(|(a, b)| String::from(a) + &b)
+            .or(ipv6_.map(|((a, b), c)| a + b + &c))
+            .or(ipv6__.map(|(a, b)| a.join(":") + &b))
+            .then_ignore(just("%").then(part).or_not());
+
+        let ipv4 = text::int::<_, Simple<char>>(10)
+            .separated_by(just('.').ignored())
+            .exactly(4)
+            .labelled("IP")
+            .map(|ip| ip.join("."));
+
+        let ip = ipv6
+            .or(ipv4)
+            .then_ignore(filter::<char, _, _>(text::Character::is_whitespace))
+            .map(|ip| IpAddr::from_str(&ip).unwrap());
+
+        let hosts = ip
+            .clone()
+            .then(domain.clone())
+            .labelled("Hosts Syntax")
+            .map(|(a, b)| Type::Host(a, b));
+
+        let adblock_ = ip
+            .clone()
+            .map(Type::Ip)
+            .or(domain.clone().map(Type::Domain));
+
+        let adblock = just("@@||")
+            .or(just("||@@"))
+            .or(just("||"))
+            .then(adblock_)
+            .labelled("AdBlock Syntax")
+            .map(|(kind, ty)| {
+                Type::Adblock(
+                    if kind.chars().any(|c| c == '@') {
+                        Kind::Deny
+                    } else {
+                        Kind::Allow
+                    },
+                    Box::new(ty),
+                )
+            });
+
+        let filter = hosts
+            .or(ip.map(Type::Ip))
+            .or(domain.map(Type::Domain))
+            .or(adblock)
+            .recover_with(skip_then_retry_until([]).consume_end());
+
+        filter
+            .padded_by(comment.repeated())
+            .padded_by(text::whitespace().or(text::newline()))
+            .padded()
+            .repeated()
+    }
+
+    ///
+    /// Parse a filter list into a bunch of individual filters
+    ///
+    /// # Errors
+    /// This will only fail if the lexer fails (i.e. the filter list is invalid)
+    ///
+    pub fn parse(file: &Path) -> Result<Option<Vec<Type>>, Error> {
+        let src = std::fs::read_to_string(file)?;
+
+        let (entries, errors) = Self::lex().parse_recovery(src);
+
+        if errors.is_empty() {
+            Ok(entries)
+        } else {
+            println!("{errors:#?}");
+            Err(Error::FilterError(String::from("Invalid filter list")))
+        }
+    }
+
+    fn insert(&mut self, entry: Type) {
+        let (action, ty, domain) = match entry {
+            Type::Host(ip, domain) => (Some(Action { rewrite: Some(ip) }), Kind::Deny, domain),
+            Type::Domain(domain) => (None, Kind::Deny, domain),
+            Type::Adblock(kind, ty) => match *ty {
+                Type::Domain(domain) => (None, kind, domain),
+                Type::Ip(_) | Type::Host(_, _) | Type::Adblock(_, _) => return,
+            },
+            Type::Ip(_) => return,
+        };
+
+        let node = domain
+            .split('.')
+            .rev()
+            .fold(&mut self.rules, |current_node, part| {
+                current_node.children.entry(part.to_string()).or_default()
+            });
+
+        node.rule = Some(Rule { domain, ty, action });
     }
 
     ///
@@ -139,15 +247,47 @@ impl Filter {
     /// If it fails to open the list
     ///
     #[instrument(skip(list), err)]
-    pub async fn load(list: &str) -> Result<(), Error> {
-        let mut filters = FILTERS.write().await;
+    pub async fn import(mut list: FilterList) -> Result<(), Error> {
+        info!("loading filter list: {}", list.name);
 
-        info!("loading filter list: {list}");
-        let file = std::fs::File::open(list)?;
+        let mut hasher = DefaultHasher::new();
+        list.hash(&mut hasher);
+        let file = format!("{}.txt", hasher.finish());
 
-        filters.parse(BufReader::new(file));
+        let entries = Self::parse(Path::new(&file))?.unwrap();
 
-        filters.lists.push(list.to_string());
+        info!("Loaded {} filter(s)", entries.len());
+
+        list.entries = entries.len();
+
+        let mut filter = FILTER.write().await;
+
+        for entry in entries {
+            filter.insert(entry);
+        }
+
+        filter.lists.insert(list);
+
+        Ok(())
+    }
+
+    ///
+    /// Reset the Global Filter to a blank slate. This is mostly useful
+    /// when removing filters
+    ///
+    /// # Errors
+    /// This should only error when a filter list fails to be imported
+    ///
+    pub async fn reset() -> Result<(), Error> {
+        let lists = {
+            let mut filter = FILTER.write().await;
+            filter.rules = Rules::default();
+            filter.lists.clone()
+        };
+
+        for list in lists {
+            Self::import(list).await?;
+        }
 
         Ok(())
     }
@@ -176,67 +316,6 @@ mod tests {
 
     #[test]
     fn parsing() {
-        let mut filter = Filter::default();
-
-        filter.parse_line("||google.com");
-        filter.parse_line("@@||test.com");
-        filter.parse_line("example.com");
-
-        //filter.parse_line("0.0.0.0 ads.com");
-        //filter.parse_line("s*.com");
-
-        assert_eq!(
-            filter.rules,
-            Rules {
-                children: {
-                    let mut inner = HashMap::default();
-                    inner.insert(
-                        "com".to_string(),
-                        Rules {
-                            children: {
-                                let mut inner = HashMap::default();
-                                inner.insert(
-                                    "google".to_string(),
-                                    Rules {
-                                        children: HashMap::default(),
-                                        rule: Some(Rule {
-                                            domain: "google.com".to_string(),
-                                            ty: Kind::Deny,
-                                            action: None,
-                                        }),
-                                    },
-                                );
-                                inner.insert(
-                                    "test".to_string(),
-                                    Rules {
-                                        children: HashMap::default(),
-                                        rule: Some(Rule {
-                                            domain: "test.com".to_string(),
-                                            ty: Kind::Allow,
-                                            action: None,
-                                        }),
-                                    },
-                                );
-                                inner.insert(
-                                    "example".to_string(),
-                                    Rules {
-                                        children: HashMap::default(),
-                                        rule: Some(Rule {
-                                            domain: "example.com".to_string(),
-                                            ty: Kind::Deny,
-                                            action: None,
-                                        }),
-                                    },
-                                );
-                                inner
-                            },
-                            rule: None,
-                        },
-                    );
-                    inner
-                },
-                rule: None,
-            }
-        );
+        let mut _filter = Filter::default();
     }
 }

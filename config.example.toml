@@ -4,5 +4,5 @@ ip = "9.9.9.9"
 port = 53
 
 [[filter]]
-name = "Adguard"
-url = "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/BaseFilter/sections/adservers.txt"
+name = "Energized"
+url = "https://block.energized.pro/spark/formats/hosts"

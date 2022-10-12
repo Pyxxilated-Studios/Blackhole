@@ -1,19 +1,21 @@
 #!/bin/bash
 
 function server() {
-    ./blackhole
+    ./blackhole ${@}
 }
 
 function client() {
     node index.js
 }
 
-case "$@" in
+case "$1" in
     start)
-        server &
-        client
+        client &
+        server ${@}
         ;;
     *)
-        exec "${@}"
+        command=$1
+        shift
+        exec "${command} ${@}"
         ;;
 esac
