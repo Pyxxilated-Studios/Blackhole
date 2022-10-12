@@ -51,12 +51,18 @@ impl FromStr for Upstream {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Serialize, Deserialize)]
 pub struct FilterList {
     pub name: String,
     pub url: String,
     #[serde(skip)]
     pub entries: usize,
+}
+
+impl PartialEq for FilterList {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.url == other.url
+    }
 }
 
 impl std::hash::Hash for FilterList {
