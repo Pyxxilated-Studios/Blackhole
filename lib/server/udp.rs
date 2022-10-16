@@ -1,4 +1,6 @@
 use std::{
+    fmt::Debug,
+    marker::PhantomData,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Instant,
@@ -7,18 +9,18 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio::{net::UdpSocket, sync::RwLock};
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, log::trace};
 
 use crate::{
     config::Config,
     dns::{
-        packet::{Buffer, Packet},
+        packet::{Buffer, Packet, ResizableBuffer},
         qualified_name::QualifiedName,
         question::Question,
-        traits::IO,
-        QueryType, Record, Result, ResultCode, Ttl,
+        traits::{FromBuffer, IO},
+        DNSError, QueryType, Record, Result, ResultCode, Ttl,
     },
-    filter::{Kind, Rewrite, Rule, FILTER},
+    filter::{Filter, Kind, Rewrite, Rule},
     statistics::{Average, Request, Statistic, STATISTICS},
 };
 
@@ -81,27 +83,34 @@ impl Server {
             let socket = self.socket.clone();
 
             tokio::spawn(async move {
-                Handler::serve(socket, packet, address).await;
+                if let Some(Record::OPT { .. }) = packet.resources.first() {
+                    Handler::<ResizableBuffer>::serve(socket, packet, address).await;
+                } else {
+                    Handler::<Buffer>::serve(socket, packet, address).await;
+                }
             });
         }
 
         Ok(())
     }
 
-    #[instrument()]
+    #[instrument(skip(self))]
     async fn receive(&self) -> Result<(Packet, SocketAddr)> {
+        trace!("Waiting for requests ...");
+
         let mut buffer = Buffer::default();
 
         let sock = self.socket.read().await;
         sock.readable().await?;
-        let (_, address) = sock.recv_from(buffer.buffer_mut()).await?;
+        let (bytes, address) = sock.recv_from(buffer.buffer_mut()).await?;
+        trace!("DNS request received from {address}: {bytes}");
 
-        Ok((Packet::try_from(&mut buffer)?, address))
+        Ok((Packet::from_buffer(&mut buffer)?, address))
     }
 }
 
 #[derive(Default, Serialize)]
-struct Handler {
+struct Handler<I> {
     client: String,
     question: Question,
     answers: Vec<Record>,
@@ -109,9 +118,15 @@ struct Handler {
     status: ResultCode,
     elapsed: usize,
     timestamp: DateTime<Utc>,
+    phantom: PhantomData<I>,
 }
 
-impl Handler {
+impl<I> Handler<I>
+where
+    I: IO + TryFrom<Packet> + Default,
+    DNSError: From<<I as TryFrom<Packet>>::Error>,
+    <I as TryFrom<Packet>>::Error: Debug,
+{
     #[instrument(skip(self, socket, packet, address))]
     async fn respond(
         &mut self,
@@ -119,7 +134,7 @@ impl Handler {
         mut packet: Packet,
         address: SocketAddr,
     ) -> Result<()> {
-        let buffer = Buffer::try_from(packet.clone()).or_else(|err| {
+        let buffer = I::try_from(packet.clone()).or_else(|err| {
             error!("{err:?}");
 
             packet.header.rescode = ResultCode::SERVFAIL;
@@ -130,13 +145,13 @@ impl Handler {
             packet.authorities = vec![];
             packet.resources = vec![];
 
-            Buffer::try_from(packet.clone())
+            I::try_from(packet.clone())
         })?;
 
         let sock = socket.read().await;
 
         sock.writable().await?;
-        sock.send_to(&buffer.buffer()[..buffer.pos()], address)
+        sock.send_to(buffer.get_range(0, buffer.pos())?, address)
             .await?;
 
         self.status = packet.header.rescode;
@@ -164,7 +179,7 @@ impl Handler {
 
         self.status = packet.header.rescode;
 
-        let buffer = match Buffer::try_from(packet) {
+        let buffer = match I::try_from(packet) {
             Ok(buffer) => buffer,
             Err(err) => {
                 error!("{err:?}");
@@ -195,20 +210,20 @@ impl Handler {
 
         self.question = packet.questions[0].clone();
 
-        let buffer = Buffer::try_from(packet)?;
+        let buffer = I::try_from(packet)?;
 
         forwarder
-            .send_to(&buffer.buffer()[0..buffer.pos()], (server.ip, server.port))
+            .send_to(buffer.get_range(0, buffer.pos())?, (server.ip, server.port))
             .await?;
 
         let mut res_buffer = Buffer::default();
         forwarder.recv_from(res_buffer.buffer_mut()).await?;
 
-        Packet::try_from(&mut res_buffer)
+        Packet::from_buffer(&mut res_buffer)
     }
 
     async fn filter(&mut self, packet: Packet) -> Result<Packet> {
-        match FILTER.read().await.check(&packet) {
+        match Filter::check(&packet) {
             Some(rule) if rule.ty == Kind::Allow => {
                 self.rule = Some(rule);
                 self.forward(packet).await
@@ -280,7 +295,7 @@ impl Handler {
     }
 
     async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
-        let mut handler = Handler {
+        let mut handler = Handler::<I> {
             client: address.ip().to_string(),
             timestamp: Utc::now(),
             ..Default::default()
@@ -318,8 +333,8 @@ impl Handler {
     }
 }
 
-impl From<Handler> for Request {
-    fn from(handler: Handler) -> Request {
+impl<I> From<Handler<I>> for Request {
+    fn from(handler: Handler<I>) -> Request {
         Request {
             client: handler.client,
             question: handler.question,

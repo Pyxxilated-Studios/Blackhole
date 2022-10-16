@@ -15,9 +15,8 @@ use thiserror::Error;
 use tracing::warn;
 
 use crate::dns::{
-    packet::Buffer,
     qualified_name::QualifiedName,
-    traits::{WriteTo, IO},
+    traits::{FromBuffer, WriteTo, IO},
 };
 
 #[derive(Debug, Error)]
@@ -45,10 +44,8 @@ impl From<Ttl> for u32 {
     }
 }
 
-impl TryFrom<&mut Buffer> for Ttl {
-    type Error = DNSError;
-
-    fn try_from(value: &mut Buffer) -> Result<Self> {
+impl<I: IO> FromBuffer<I> for Ttl {
+    fn from_buffer(value: &mut I) -> Result<Self> {
         Ok(Self::from(value.read::<u32>()?))
     }
 }
@@ -117,12 +114,12 @@ impl From<u8> for ResultCode {
 impl From<ResultCode> for u8 {
     fn from(code: ResultCode) -> Self {
         match code {
+            ResultCode::NOERROR => 0,
             ResultCode::FORMERR => 1,
             ResultCode::SERVFAIL => 2,
             ResultCode::NXDOMAIN => 3,
             ResultCode::NOTIMPLEMENTED => 4,
             ResultCode::REFUSED => 5,
-            ResultCode::NOERROR => 6,
         }
     }
 }
@@ -248,7 +245,7 @@ pub enum Record {
     OPT {
         packet_len: u16,
         flags: u32,
-        data: String,
+        data: Vec<u8>,
     },
 }
 
@@ -407,7 +404,17 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 let size = out.pos() - (pos + 2);
                 out.set(pos, size as u16)
             }
-            Record::OPT { .. } => Ok(out),
+            Record::OPT {
+                ref data,
+                packet_len,
+                flags,
+            } => out
+                .write(0u8)?
+                .write(QueryType::OPT)?
+                .write(packet_len)?
+                .write(flags)?
+                .write(data.len() as u16)?
+                .write(data.clone()),
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);
                 Ok(out)
@@ -416,10 +423,8 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
     }
 }
 
-impl TryFrom<&mut Buffer> for Record {
-    type Error = DNSError;
-
-    fn try_from(buffer: &mut Buffer) -> Result<Record> {
+impl<I: IO> FromBuffer<I> for Record {
+    fn from_buffer(buffer: &mut I) -> Result<Record> {
         let domain = buffer.read()?;
 
         let qtype = buffer.read::<u16>()?.into();
@@ -509,8 +514,7 @@ impl TryFrom<&mut Buffer> for Record {
             }
             QueryType::OPT => {
                 let cur_pos = buffer.pos();
-                let data = String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?)
-                    .to_string();
+                let data = buffer.get_range(cur_pos, data_len as usize)?.to_vec();
                 buffer.step(data_len as usize)?;
 
                 Ok(Record::OPT {

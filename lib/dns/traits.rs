@@ -1,6 +1,19 @@
 use std::fmt::Debug;
 
-use crate::dns::{packet::Buffer, DNSError, Result};
+use crate::dns::Result;
+
+pub trait FromBuffer<I: IO> {
+    /// Build an item from a buffer
+    ///
+    /// # Errors
+    /// This will fail if reading from the buffer causes it to
+    /// read past the end of its internal state
+    ///
+    fn from_buffer(buffer: &mut I) -> Result<Self>
+    where
+        I: IO,
+        Self: Sized;
+}
 
 pub trait WriteTo<'a, T: IO> {
     type Out: IO = T;
@@ -80,9 +93,10 @@ pub trait IO {
     /// If the size of the element causes the buffer to read
     /// past its internal state.
     ///
-    fn read<'a, T>(&'a mut self) -> Result<T>
+    fn read<T>(&'_ mut self) -> Result<T>
     where
-        T: TryFrom<&'a mut Self, Error = DNSError> + Default;
+        T: FromBuffer<Self> + Default,
+        Self: Sized;
 
     ///
     /// Write an element into the buffer
@@ -120,11 +134,9 @@ macro_rules! impl_write {
 
 macro_rules! impl_try_from {
     ( $($t:ty),* ) => {
-        $(impl TryFrom<&mut Buffer> for $t  {
-            type Error = DNSError;
-
+        $(impl<I: IO> FromBuffer<I> for $t  {
             #[inline]
-            fn try_from(buffer: &mut Buffer) -> Result<$t> {
+            fn from_buffer(buffer: &mut I) -> Result<$t> {
                 let res = <$t>::from_be_bytes(std::array::try_from_fn(|_| buffer.read())?);
 
                 Ok(res)
@@ -133,12 +145,10 @@ macro_rules! impl_try_from {
     }
 }
 
-impl TryFrom<&mut Buffer> for u8 {
-    type Error = DNSError;
-
-    fn try_from(buffer: &mut Buffer) -> Result<u8> {
+impl<I: IO> FromBuffer<I> for u8 {
+    fn from_buffer(buffer: &mut I) -> Result<u8> {
         let res = buffer.get(buffer.pos())?;
-        buffer.pos += 1;
+        buffer.step(1)?;
 
         Ok(res)
     }

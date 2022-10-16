@@ -20,7 +20,7 @@ use crate::{
 
 pub type Span = std::ops::Range<usize>;
 
-pub static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
+static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
@@ -350,26 +350,29 @@ impl Filter {
         Ok(())
     }
 
-    pub fn check(&self, packet: &dns::packet::Packet) -> Option<Rule> {
-        packet.questions[0]
-            .name
-            .name()
-            .split('.')
-            .rev()
-            .try_fold(&self.rules, |current_node, entry| {
-                match current_node.children.get(entry) {
-                    Some(entry) => Ok(entry),
-                    None => Err(current_node),
-                }
+    pub fn check(packet: &dns::packet::Packet) -> Option<Rule> {
+        FILTER
+            .try_read()
+            .map(|filter| {
+                packet.questions[0]
+                    .name
+                    .name()
+                    .split('.')
+                    .rev()
+                    .try_fold(&filter.rules, |current_node, entry| {
+                        match current_node.children.get(entry) {
+                            Some(entry) => Ok(entry),
+                            None => Err(current_node),
+                        }
+                    })
+                    .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
             })
-            .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
+            .unwrap_or_default()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::{Filter, Kind, Rule, Rules};
 
     #[test]
