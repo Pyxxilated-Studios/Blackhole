@@ -1,10 +1,9 @@
 use serde::Serialize;
 
 use crate::dns::{
-    packet::Buffer,
     qualified_name::QualifiedName,
-    traits::{WriteTo, IO},
-    DNSError, QueryType, Result,
+    traits::{FromBuffer, WriteTo, IO},
+    QueryType, Result,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize)]
@@ -20,12 +19,10 @@ impl<'a, T: IO> WriteTo<'a, T> for Question {
     }
 }
 
-impl TryFrom<&mut Buffer> for Question {
-    type Error = DNSError;
-
-    fn try_from(buffer: &mut Buffer) -> Result<Self> {
+impl<I: IO> FromBuffer<I> for Question {
+    fn from_buffer(buffer: &mut I) -> Result<Self> {
         let question = Question {
-            name: buffer.read::<QualifiedName>()?,
+            name: buffer.read()?,
             qtype: QueryType::from(buffer.read::<u16>()?),
         };
 

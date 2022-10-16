@@ -1,10 +1,11 @@
 use serde::Serialize;
 
 use crate::dns::{
-    packet::Buffer,
     traits::{WriteTo, IO},
     DNSError, Result,
 };
+
+use super::traits::FromBuffer;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub struct QualifiedName(pub String);
@@ -39,15 +40,13 @@ impl<'a> From<&'a QualifiedName> for &'a str {
     }
 }
 
-impl TryFrom<&mut Buffer> for QualifiedName {
-    type Error = DNSError;
-
+impl<I: IO> FromBuffer<I> for QualifiedName {
     /// Read a qname
     ///
     /// The tricky part: Reading domain names, taking labels into consideration.
     /// Will take something like [3]www[6]google[3]com[0] and append
     /// www.google.com to outstr.
-    fn try_from(buffer: &mut Buffer) -> Result<QualifiedName> {
+    fn from_buffer(buffer: &mut I) -> Result<Self> {
         let mut pos = buffer.pos();
         let mut jumped = false;
         let mut outstr = String::new();

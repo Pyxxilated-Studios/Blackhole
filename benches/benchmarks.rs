@@ -3,6 +3,7 @@ use blackhole::dns::{
     packet::{Buffer, Packet},
     qualified_name::QualifiedName,
     question::Question,
+    traits::FromBuffer,
     QueryType, Record, ResultCode,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -97,7 +98,7 @@ pub fn buffer_to_packet(c: &mut Criterion) {
         .try_into()
         .unwrap();
 
-        b.iter(|| black_box(Packet::try_from(&mut buffer).unwrap()))
+        b.iter(|| black_box(Packet::from_buffer(&mut buffer).unwrap()))
     });
 }
 

@@ -1,7 +1,6 @@
 use crate::dns::{
-    packet::Buffer,
-    traits::{WriteTo, IO},
-    DNSError, Result, ResultCode,
+    traits::{FromBuffer, WriteTo, IO},
+    Result, ResultCode,
 };
 
 #[allow(clippy::struct_excessive_bools)]
@@ -27,34 +26,8 @@ pub struct Header {
     pub resource_entries: u16,
 }
 
-impl<'a, T: IO> WriteTo<'a, T> for Header {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        out.write(self.id)?
-            .write(
-                u8::from(self.recursion_desired)
-                    | (u8::from(self.truncated_message) << 1)
-                    | (u8::from(self.authoritative_answer) << 2)
-                    | (self.opcode << 3)
-                    | (u8::from(self.response) << 7),
-            )?
-            .write(
-                u8::from(self.rescode)
-                    | (u8::from(self.checking_disabled) << 4)
-                    | (u8::from(self.authed_data) << 5)
-                    | (u8::from(self.z) << 6)
-                    | (u8::from(self.recursion_available) << 7),
-            )?
-            .write(self.questions)?
-            .write(self.answers)?
-            .write(self.authoritative_entries)?
-            .write(self.resource_entries)
-    }
-}
-
-impl TryFrom<&mut Buffer> for Header {
-    type Error = DNSError;
-
-    fn try_from(buffer: &mut Buffer) -> Result<Self> {
+impl<I: IO> FromBuffer<I> for Header {
+    fn from_buffer(buffer: &mut I) -> Result<Header> {
         let id = buffer.read()?;
         let [a, b] = buffer.read::<u16>()?.to_be_bytes();
 
@@ -80,5 +53,29 @@ impl TryFrom<&mut Buffer> for Header {
         };
 
         Ok(header)
+    }
+}
+
+impl<'a, T: IO> WriteTo<'a, T> for Header {
+    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write(self.id)?
+            .write(
+                u8::from(self.recursion_desired)
+                    | (u8::from(self.truncated_message) << 1)
+                    | (u8::from(self.authoritative_answer) << 2)
+                    | (self.opcode << 3)
+                    | (u8::from(self.response) << 7),
+            )?
+            .write(
+                u8::from(self.rescode)
+                    | (u8::from(self.checking_disabled) << 4)
+                    | (u8::from(self.authed_data) << 5)
+                    | (u8::from(self.z) << 6)
+                    | (u8::from(self.recursion_available) << 7),
+            )?
+            .write(self.questions)?
+            .write(self.answers)?
+            .write(self.authoritative_entries)?
+            .write(self.resource_entries)
     }
 }
