@@ -56,7 +56,7 @@ impl<I: IO> FromBuffer<I> for QualifiedName {
             let len = buffer.get(pos)?;
 
             // A two byte sequence, where the two highest bits of the first byte is
-            // set, represents a offset relative to the start of the buffer. We
+            // set, represents an offset relative to the start of the buffer. We
             // handle this by jumping to the offset, setting a flag to indicate
             // that we shouldn't update the shared buffer position once done.
             if (len & 0xC0) > 0 {

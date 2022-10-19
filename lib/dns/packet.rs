@@ -243,7 +243,7 @@ impl Default for Buffer {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default)]
 pub struct Packet {
     pub header: Header,
     pub questions: Vec<Question>,
@@ -255,7 +255,7 @@ pub struct Packet {
 impl<I: IO> FromBuffer<I> for Packet {
     fn from_buffer(buffer: &mut I) -> Result<Packet> {
         buffer.seek(0)?;
-        let header = Header::from_buffer(&mut *buffer)?;
+        let header = Header::from_buffer(buffer)?;
 
         let questions = header.questions;
         let answers = header.answers;
@@ -265,16 +265,16 @@ impl<I: IO> FromBuffer<I> for Packet {
         let result = Packet {
             header,
             questions: (0..questions)
-                .filter_map(|_| Question::from_buffer(&mut *buffer).ok())
+                .filter_map(|_| Question::from_buffer(buffer).ok())
                 .collect(),
             answers: (0..answers)
-                .filter_map(|_| Record::from_buffer(&mut *buffer).ok())
+                .filter_map(|_| Record::from_buffer(buffer).ok())
                 .collect(),
             authorities: (0..authorities)
-                .filter_map(|_| Record::from_buffer(&mut *buffer).ok())
+                .filter_map(|_| Record::from_buffer(buffer).ok())
                 .collect(),
             resources: (0..resources)
-                .filter_map(|_| Record::from_buffer(&mut *buffer).ok())
+                .filter_map(|_| Record::from_buffer(buffer).ok())
                 .collect(),
         };
 
@@ -290,7 +290,7 @@ mod test {
         qualified_name::QualifiedName,
         question::Question,
         traits::FromBuffer,
-        QueryType, Record, ResultCode, Ttl,
+        QueryType, Record, ResultCode, Ttl, RR,
     };
 
     #[test]
@@ -319,16 +319,26 @@ mod test {
             }],
             answers: vec![
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 20,
+                    },
                     priority: 10,
                     host: QualifiedName("mail.example.com".to_owned()),
-                    ttl: Ttl(3600),
                 },
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 23,
+                    },
                     priority: 20,
                     host: QualifiedName("mailsec.example.com".to_owned()),
-                    ttl: Ttl(3600),
                 },
             ],
             authorities: vec![],

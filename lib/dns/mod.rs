@@ -29,6 +29,37 @@ pub enum DNSError {
 
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct RR {
+    pub domain: QualifiedName,
+    pub query_type: QueryType,
+    pub class: u16,
+    pub ttl: Ttl,
+    pub data_length: u16,
+}
+
+impl<I: IO> FromBuffer<I> for RR {
+    fn from_buffer(buffer: &mut I) -> std::result::Result<Self, DNSError> {
+        Ok(RR {
+            domain: buffer.read()?,
+            query_type: buffer.read()?,
+            class: buffer.read()?,
+            ttl: buffer.read()?,
+            data_length: buffer.read()?,
+        })
+    }
+}
+
+impl<'a, T: IO> WriteTo<'a, T> for &RR {
+    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write(&self.domain)?
+            .write(self.query_type)?
+            .write(self.class)?
+            .write(self.ttl)?
+            .write(self.data_length)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, Default, Serialize)]
 pub struct Ttl(pub u32);
 
@@ -136,6 +167,11 @@ pub enum QueryType {
     AAAA,
     SRV,
     OPT,
+    RRSIG,
+    NSEC,
+    DNSKEY,
+    NSEC3,
+    NSEC3PARAM,
 }
 
 impl Default for QueryType {
@@ -157,6 +193,11 @@ impl From<QueryType> for u16 {
             QueryType::AAAA => 28,
             QueryType::SRV => 33,
             QueryType::OPT => 41,
+            QueryType::RRSIG => 46,
+            QueryType::NSEC => 47,
+            QueryType::DNSKEY => 48,
+            QueryType::NSEC3 => 50,
+            QueryType::NSEC3PARAM => 51,
         }
     }
 }
@@ -173,8 +214,23 @@ impl From<u16> for QueryType {
             28 => QueryType::AAAA,
             33 => QueryType::SRV,
             41 => QueryType::OPT,
+            46 => QueryType::RRSIG,
+            47 => QueryType::NSEC,
+            48 => QueryType::DNSKEY,
+            50 => QueryType::NSEC3,
+            51 => QueryType::NSEC3PARAM,
             _ => QueryType::UNKNOWN(num),
         }
+    }
+}
+
+impl<I: IO> FromBuffer<I> for QueryType {
+    fn from_buffer(buffer: &mut I) -> Result<Self>
+    where
+        I: IO,
+        Self: Sized,
+    {
+        Ok(buffer.read::<u16>()?.into())
     }
 }
 
@@ -184,31 +240,25 @@ impl<'a, T: IO> WriteTo<'a, T> for QueryType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum Record {
     UNKNOWN {
-        domain: QualifiedName,
-        qtype: u16,
-        data_len: u16,
-        ttl: Ttl,
+        record: RR,
     },
     A {
-        domain: QualifiedName,
+        record: RR,
         addr: Ipv4Addr,
-        ttl: Ttl,
     },
     NS {
-        domain: QualifiedName,
+        record: RR,
         host: QualifiedName,
-        ttl: Ttl,
     },
     CNAME {
-        domain: QualifiedName,
+        record: RR,
         host: QualifiedName,
-        ttl: Ttl,
     },
     SOA {
-        domain: QualifiedName,
+        record: RR,
         m_name: QualifiedName,
         r_name: QualifiedName,
         serial: u32,
@@ -216,51 +266,94 @@ pub enum Record {
         retry: u32,
         expire: u32,
         minimum: u32,
-        ttl: Ttl,
     },
     MX {
-        domain: QualifiedName,
+        record: RR,
         priority: u16,
         host: QualifiedName,
-        ttl: Ttl,
     },
     TXT {
-        domain: QualifiedName,
+        record: RR,
         data: String,
-        ttl: Ttl,
     },
     AAAA {
-        domain: QualifiedName,
+        record: RR,
         addr: Ipv6Addr,
-        ttl: Ttl,
     },
     SRV {
-        domain: QualifiedName,
+        record: RR,
         priority: u16,
         weight: u16,
         port: u16,
         host: QualifiedName,
-        ttl: Ttl,
     },
     OPT {
         packet_len: u16,
         flags: u32,
         data: Vec<u8>,
     },
+    RRSIG {
+        record: RR,
+        ty: u16,
+        algorithm: u8,
+        labels: u8,
+        original_ttl: Ttl,
+        expiration: u32,
+        inception: u32,
+        tag: u16,
+        name: QualifiedName,
+        signature: Vec<u8>,
+    },
+    NSEC {
+        record: RR,
+        next_domain: QualifiedName,
+        type_map: Vec<u8>,
+    },
+    DNSKEY {
+        record: RR,
+        flags: u16,
+        protocol: u8,
+        algorithm: u8,
+        public_key: Vec<u8>,
+    },
+    NSEC3 {
+        record: RR,
+        algorithm: u8,
+        flags: u8,
+        iterations: u16,
+        salt_length: u8,
+        salt: Vec<u8>,
+        hash_length: u8,
+        hash: Vec<u8>,
+        type_map: Vec<u8>,
+    },
+    NSEC3PARAM {
+        record: RR,
+        algorithm: u8,
+        flags: u8,
+        iterations: u16,
+        salt_length: u8,
+        salt: Vec<u8>,
+    },
 }
 
 impl Record {
     pub fn domain(&self) -> Option<&String> {
         match self {
-            Record::UNKNOWN { domain, .. }
-            | Record::A { domain, .. }
-            | Record::NS { domain, .. }
-            | Record::CNAME { domain, .. }
-            | Record::SOA { domain, .. }
-            | Record::MX { domain, .. }
-            | Record::TXT { domain, .. }
-            | Record::AAAA { domain, .. }
-            | Record::SRV { domain, .. } => Some(&domain.0),
+            Record::UNKNOWN { record, .. }
+            | Record::A { record, .. }
+            | Record::NS { record, .. }
+            | Record::CNAME { record, .. }
+            | Record::SOA { record, .. }
+            | Record::MX { record, .. }
+            | Record::TXT { record, .. }
+            | Record::AAAA { record, .. }
+            | Record::SRV { record, .. }
+            | Record::RRSIG { record, .. }
+            | Record::NSEC { record, .. }
+            | Record::DNSKEY { record, .. }
+            | Record::NSEC3 { record, .. }
+            | Record::NSEC3PARAM { record, .. } => Some(&record.domain.0),
             Record::OPT { .. } => None,
         }
     }
@@ -270,76 +363,39 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
     #[allow(clippy::too_many_lines)]
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         match *self {
-            Record::A {
-                ref domain,
-                addr,
-                ttl,
-            } => out
-                .write(domain)?
-                .write(QueryType::A)?
-                .write(1u16)?
-                .write(ttl.0)?
-                .write(4u16)?
-                .write(u32::from(addr)),
-            Record::NS {
-                ref domain,
-                ref host,
-                ttl,
-            } => {
-                let pos = out
-                    .write(domain)?
-                    .write(QueryType::NS)?
-                    .write(1u16)?
-                    .write(ttl.0)?
-                    .pos();
-
-                let size = out.write(0u16)?.write(host)?.pos() - (pos + 2);
-                out.set(pos, size as u16)
+            Record::A { ref record, addr } => {
+                let start = out.write(record)?.pos();
+                let end = out.write(u32::from(addr))?.pos();
+                out.set(start - 2, (end - start) as u16)
             }
-            Record::CNAME {
-                ref domain,
+            Record::NS {
+                ref record,
                 ref host,
-                ttl,
+            }
+            | Record::CNAME {
+                ref record,
+                ref host,
             } => {
-                let pos = out
-                    .write(domain)?
-                    .write(QueryType::CNAME)?
-                    .write(1u16)?
-                    .write(ttl.0)?
-                    .pos();
-
-                let size = out.write(0u16)?.write(host)?.pos() - (pos + 2);
-                out.set(pos, size as u16)
+                let start = out.write(record)?.pos();
+                let end = out.write(host)?.pos();
+                out.set(start - 2, (end - start) as u16)
             }
             Record::MX {
-                ref domain,
+                ref record,
                 priority,
                 ref host,
-                ttl,
             } => {
-                let pos = out
-                    .write(domain)?
-                    .write(QueryType::MX)?
-                    .write(1u16)?
-                    .write(ttl.0)?
-                    .pos();
-
-                let size = out.write(0u16)?.write(priority)?.write(host)?.pos() - (pos + 2);
-                out.set(pos, size as u16)
+                let start = out.write(record)?.pos();
+                let end = out.write(priority)?.write(host)?.pos();
+                out.set(start - 2, (end - start) as u16)
             }
-            Record::AAAA {
-                ref domain,
-                addr,
-                ttl,
-            } => out
-                .write(domain)?
-                .write(QueryType::AAAA)?
-                .write(1u16)?
-                .write(ttl.0)?
-                .write(16u16)?
-                .write(u128::from(addr)),
+            Record::AAAA { ref record, addr } => {
+                let start = out.write(record)?.pos();
+                let end = out.write(u128::from(addr))?.pos();
+                out.set(start - 2, (end - start) as u16)
+            }
             Record::SOA {
-                ref domain,
+                ref record,
                 ref m_name,
                 ref r_name,
                 serial,
@@ -347,17 +403,9 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 retry,
                 expire,
                 minimum,
-                ttl,
             } => {
-                let pos = out
-                    .write(domain)?
-                    .write(QueryType::SOA)?
-                    .write(1u16)?
-                    .write(ttl)?
-                    .pos();
-
-                let size = out
-                    .write(0u16)?
+                let start = out.write(record)?.pos();
+                let end = out
                     .write(m_name)?
                     .write(r_name)?
                     .write(serial)?
@@ -365,44 +413,33 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                     .write(retry)?
                     .write(expire)?
                     .write(minimum)?
-                    .pos() as u16;
+                    .pos();
 
-                out.set(pos, size - (pos as u16 + 2))
+                out.set(start - 2, (end - start) as u16)
             }
             Record::TXT {
-                ref domain,
+                ref record,
                 ref data,
-                ttl,
             } => out
-                .write(domain)?
-                .write(QueryType::TXT)?
-                .write(1u16)?
-                .write(ttl)?
+                .write(record)?
                 .write(data.len() as u16)?
                 .write(data.as_bytes()),
             Record::SRV {
-                ref domain,
+                ref record,
                 priority,
                 weight,
                 port,
                 ref host,
-                ttl,
             } => {
-                let pos = out
-                    .write(domain)?
-                    .write(QueryType::SRV)?
-                    .write(1u16)?
-                    .write(ttl)?
-                    .pos();
-
-                out.write(0u16)?
+                let start = out.write(record)?.pos();
+                let end = out
                     .write(priority)?
                     .write(weight)?
                     .write(port)?
-                    .write(host)?;
+                    .write(host)?
+                    .pos();
 
-                let size = out.pos() - (pos + 2);
-                out.set(pos, size as u16)
+                out.set(start - 2, (end - start) as u16)
             }
             Record::OPT {
                 ref data,
@@ -415,6 +452,103 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 .write(flags)?
                 .write(data.len() as u16)?
                 .write(data.clone()),
+            Record::RRSIG {
+                ref record,
+                ty,
+                algorithm,
+                labels,
+                original_ttl,
+                expiration,
+                inception,
+                tag,
+                ref name,
+                ref signature,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(ty)?
+                    .write(algorithm)?
+                    .write(labels)?
+                    .write(original_ttl)?
+                    .write(expiration)?
+                    .write(inception)?
+                    .write(tag)?
+                    .write(name)?
+                    .write(signature.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
+            Record::NSEC {
+                ref record,
+                ref next_domain,
+                ref type_map,
+            } => out
+                .write(record)?
+                .write((type_map.len() + next_domain.0.len()) as u16)?
+                .write(next_domain)?
+                .write(type_map.clone()),
+            Record::DNSKEY {
+                ref record,
+                flags,
+                protocol,
+                algorithm,
+                ref public_key,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(flags)?
+                    .write(protocol)?
+                    .write(algorithm)?
+                    .write(public_key.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
+            Record::NSEC3 {
+                ref record,
+                algorithm,
+                flags,
+                iterations,
+                salt_length,
+                ref salt,
+                hash_length,
+                ref hash,
+                ref type_map,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(algorithm)?
+                    .write(flags)?
+                    .write(iterations)?
+                    .write(salt_length)?
+                    .write(salt.clone())?
+                    .write(hash_length)?
+                    .write(hash.clone())?
+                    .write(type_map.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
+            Record::NSEC3PARAM {
+                ref record,
+                algorithm,
+                flags,
+                iterations,
+                salt_length,
+                ref salt,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(algorithm)?
+                    .write(flags)?
+                    .write(iterations)?
+                    .write(salt_length)?
+                    .write(salt.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);
                 Ok(out)
@@ -424,114 +558,183 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
 }
 
 impl<I: IO> FromBuffer<I> for Record {
+    #[allow(clippy::too_many_lines)]
     fn from_buffer(buffer: &mut I) -> Result<Record> {
-        let domain = buffer.read()?;
+        let record: RR = buffer.read()?;
 
-        let qtype = buffer.read::<u16>()?.into();
-        let class = buffer.read()?;
-        let ttl = buffer.read()?;
-        let data_len = buffer.read()?;
-
-        match qtype {
-            QueryType::A => {
-                let addr = Ipv4Addr::from(buffer.read::<u32>()?);
-
-                Ok(Record::A { domain, addr, ttl })
-            }
-            QueryType::AAAA => {
-                let addr = Ipv6Addr::from(buffer.read::<u128>()?);
-
-                Ok(Record::AAAA { domain, addr, ttl })
-            }
-            QueryType::NS => {
-                let host = buffer.read()?;
-
-                Ok(Record::NS { domain, host, ttl })
-            }
-            QueryType::CNAME => {
-                let host = buffer.read()?;
-
-                Ok(Record::CNAME { domain, host, ttl })
-            }
-            QueryType::MX => {
-                let priority = buffer.read()?;
-                let host = buffer.read()?;
-
-                Ok(Record::MX {
-                    domain,
-                    priority,
-                    host,
-                    ttl,
-                })
-            }
-            QueryType::SOA => {
-                let m_name = buffer.read()?;
-
-                let r_name = buffer.read()?;
-
-                let serial = buffer.read()?;
-                let refresh = buffer.read()?;
-                let retry = buffer.read()?;
-                let expire = buffer.read()?;
-                let minimum = buffer.read()?;
-
-                Ok(Record::SOA {
-                    domain,
-                    m_name,
-                    r_name,
-                    serial,
-                    refresh,
-                    retry,
-                    expire,
-                    minimum,
-                    ttl,
-                })
-            }
+        match record.query_type {
+            QueryType::A => Ok(Record::A {
+                record,
+                addr: Ipv4Addr::from(buffer.read::<u32>()?),
+            }),
+            QueryType::AAAA => Ok(Record::AAAA {
+                record,
+                addr: Ipv6Addr::from(buffer.read::<u128>()?),
+            }),
+            QueryType::NS => Ok(Record::NS {
+                record,
+                host: buffer.read()?,
+            }),
+            QueryType::CNAME => Ok(Record::CNAME {
+                record,
+                host: buffer.read()?,
+            }),
+            QueryType::MX => Ok(Record::MX {
+                record,
+                priority: buffer.read()?,
+                host: buffer.read()?,
+            }),
+            QueryType::SOA => Ok(Record::SOA {
+                record,
+                m_name: buffer.read()?,
+                r_name: buffer.read()?,
+                serial: buffer.read()?,
+                refresh: buffer.read()?,
+                retry: buffer.read()?,
+                expire: buffer.read()?,
+                minimum: buffer.read()?,
+            }),
             QueryType::TXT => {
-                let cur_pos = buffer.pos();
-                let data = String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?)
-                    .to_string();
+                let data = String::from_utf8_lossy(
+                    buffer.get_range(buffer.pos(), record.data_length as usize)?,
+                )
+                .to_string();
 
-                buffer.step(data_len as usize)?;
+                buffer.step(record.data_length as usize)?;
 
-                Ok(Record::TXT { domain, data, ttl })
+                Ok(Record::TXT { record, data })
             }
-            QueryType::SRV => {
-                let priority = buffer.read()?;
-                let weight = buffer.read()?;
-                let port = buffer.read()?;
-
-                let host = buffer.read()?;
-
-                Ok(Record::SRV {
-                    domain,
-                    priority,
-                    weight,
-                    port,
-                    host,
-                    ttl,
-                })
-            }
+            QueryType::SRV => Ok(Record::SRV {
+                record,
+                priority: buffer.read()?,
+                weight: buffer.read()?,
+                port: buffer.read()?,
+                host: buffer.read()?,
+            }),
             QueryType::OPT => {
-                let cur_pos = buffer.pos();
-                let data = buffer.get_range(cur_pos, data_len as usize)?.to_vec();
-                buffer.step(data_len as usize)?;
+                let data = buffer
+                    .get_range(buffer.pos(), record.data_length as usize)?
+                    .to_vec();
+                buffer.step(record.data_length as usize)?;
 
                 Ok(Record::OPT {
-                    packet_len: class,
-                    flags: ttl.into(),
+                    packet_len: record.class,
+                    flags: record.ttl.into(),
                     data,
                 })
             }
-            QueryType::UNKNOWN(_) => {
-                buffer.step(data_len as usize)?;
+            QueryType::RRSIG => {
+                let start = buffer.pos();
+                let ty = buffer.read()?;
+                let algorithm = buffer.read()?;
+                let labels = buffer.read()?;
+                let original_ttl = buffer.read()?;
+                let expiration = buffer.read()?;
+                let inception = buffer.read()?;
+                let tag = buffer.read()?;
+                let name = buffer.read()?;
 
-                Ok(Record::UNKNOWN {
-                    domain,
-                    qtype: qtype.into(),
-                    data_len,
-                    ttl,
+                let sign_len = record.data_length as usize - (buffer.pos() - start);
+                let signature = buffer.get_range(buffer.pos(), sign_len)?.to_vec();
+                buffer.step(sign_len)?;
+
+                Ok(Record::RRSIG {
+                    record,
+                    ty,
+                    algorithm,
+                    labels,
+                    original_ttl,
+                    expiration,
+                    inception,
+                    tag,
+                    name,
+                    signature,
                 })
+            }
+            QueryType::NSEC => {
+                let start = buffer.pos();
+                let next_domain = buffer.read()?;
+
+                let map_len = record.data_length as usize - (buffer.pos() - start);
+                let type_map = buffer.get_range(buffer.pos(), map_len)?.to_vec();
+                buffer.step(map_len)?;
+
+                Ok(Record::NSEC {
+                    record,
+                    next_domain,
+                    type_map,
+                })
+            }
+            QueryType::DNSKEY => {
+                let flags = buffer.read()?;
+                let protocol = buffer.read()?;
+                let algorithm = buffer.read()?;
+                let public_key = buffer
+                    .get_range(buffer.pos(), record.data_length as usize - 4)?
+                    .to_vec();
+
+                buffer.step(record.data_length as usize - 4)?;
+
+                Ok(Record::DNSKEY {
+                    record,
+                    flags,
+                    protocol,
+                    algorithm,
+                    public_key,
+                })
+            }
+            QueryType::NSEC3 => {
+                let start = buffer.pos();
+                let algorithm = buffer.read()?;
+                let flags = buffer.read()?;
+                let iterations = buffer.read()?;
+
+                let salt_length = buffer.read()?;
+                let salt = buffer.get_range(buffer.pos(), salt_length)?.to_vec();
+                buffer.step(salt_length)?;
+
+                let hash_length = buffer.read()?;
+                let hash = buffer.get_range(buffer.pos(), hash_length)?.to_vec();
+                buffer.step(hash_length)?;
+
+                let map_len = record.data_length as usize - (buffer.pos() - start);
+                let type_map = buffer.get_range(buffer.pos(), map_len)?.to_vec();
+                buffer.step(map_len)?;
+
+                Ok(Record::NSEC3 {
+                    record,
+                    algorithm,
+                    flags,
+                    iterations,
+                    salt_length: salt_length as u8,
+                    salt,
+                    hash_length: hash_length as u8,
+                    hash,
+                    type_map,
+                })
+            }
+            QueryType::NSEC3PARAM => {
+                let algorithm = buffer.read()?;
+                let flags = buffer.read()?;
+                let iterations = buffer.read()?;
+
+                let salt_length = buffer.read()?;
+                let salt = buffer.get_range(buffer.pos(), salt_length)?.to_vec();
+                buffer.step(salt_length)?;
+
+                Ok(Record::NSEC3PARAM {
+                    record,
+                    algorithm,
+                    flags,
+                    iterations,
+                    salt_length: salt_length as u8,
+                    salt,
+                })
+            }
+            QueryType::UNKNOWN(_) => {
+                buffer.step(record.data_length as usize)?;
+
+                Ok(Record::UNKNOWN { record })
             }
         }
     }

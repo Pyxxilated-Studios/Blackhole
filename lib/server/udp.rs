@@ -18,7 +18,7 @@ use crate::{
         qualified_name::QualifiedName,
         question::Question,
         traits::{FromBuffer, IO},
-        DNSError, QueryType, Record, Result, ResultCode, Ttl,
+        DNSError, QueryType, Record, Result, ResultCode, Ttl, RR,
     },
     filter::{Filter, Kind, Rewrite, Rule},
     statistics::{Average, Request, Statistic, STATISTICS},
@@ -241,7 +241,13 @@ where
                     }) => {
                         packet.header.answers = 1;
                         packet.answers = vec![Record::A {
-                            domain: QualifiedName(packet.questions[0].name.name()),
+                            record: RR {
+                                domain: QualifiedName(packet.questions[0].name.name()),
+                                ttl: Ttl(10),
+                                query_type: QueryType::A,
+                                class: 1,
+                                data_length: 0,
+                            },
                             addr: match rule
                                 .action
                                 .clone()
@@ -255,7 +261,6 @@ where
                                 IpAddr::V4(addr) => addr,
                                 IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
                             },
-                            ttl: Ttl(10),
                         }];
                     }
                     Some(Question {
@@ -264,7 +269,13 @@ where
                     }) => {
                         packet.header.answers = 1;
                         packet.answers = vec![Record::AAAA {
-                            domain: QualifiedName(packet.questions[0].name.name()),
+                            record: RR {
+                                domain: QualifiedName(packet.questions[0].name.name()),
+                                ttl: Ttl(10),
+                                query_type: QueryType::AAAA,
+                                class: 1,
+                                data_length: 0,
+                            },
                             addr: match rule
                                 .action
                                 .clone()
@@ -278,7 +289,6 @@ where
                                 IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
                                 IpAddr::V6(addr) => addr,
                             },
-                            ttl: Ttl(10),
                         }];
                     }
                     _ => {}
