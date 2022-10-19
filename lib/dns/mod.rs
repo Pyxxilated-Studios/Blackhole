@@ -167,11 +167,14 @@ pub enum QueryType {
     AAAA,
     SRV,
     OPT,
+    DS,
     RRSIG,
     NSEC,
     DNSKEY,
     NSEC3,
     NSEC3PARAM,
+    SVCB,
+    HTTPS,
 }
 
 impl Default for QueryType {
@@ -193,11 +196,14 @@ impl From<QueryType> for u16 {
             QueryType::AAAA => 28,
             QueryType::SRV => 33,
             QueryType::OPT => 41,
+            QueryType::DS => 43,
             QueryType::RRSIG => 46,
             QueryType::NSEC => 47,
             QueryType::DNSKEY => 48,
             QueryType::NSEC3 => 50,
             QueryType::NSEC3PARAM => 51,
+            QueryType::SVCB => 64,
+            QueryType::HTTPS => 65,
         }
     }
 }
@@ -214,11 +220,14 @@ impl From<u16> for QueryType {
             28 => QueryType::AAAA,
             33 => QueryType::SRV,
             41 => QueryType::OPT,
+            43 => QueryType::DS,
             46 => QueryType::RRSIG,
             47 => QueryType::NSEC,
             48 => QueryType::DNSKEY,
             50 => QueryType::NSEC3,
             51 => QueryType::NSEC3PARAM,
+            64 => QueryType::SVCB,
+            65 => QueryType::HTTPS,
             _ => QueryType::UNKNOWN(num),
         }
     }
@@ -292,6 +301,13 @@ pub enum Record {
         flags: u32,
         data: Vec<u8>,
     },
+    DS {
+        record: RR,
+        key_tag: u16,
+        algorithm: u8,
+        digest_type: u8,
+        digest: Vec<u8>,
+    },
     RRSIG {
         record: RR,
         ty: u16,
@@ -335,6 +351,18 @@ pub enum Record {
         salt_length: u8,
         salt: Vec<u8>,
     },
+    SVCB {
+        record: RR,
+        priority: u16,
+        target: QualifiedName,
+        params: Vec<u8>,
+    },
+    HTTPS {
+        record: RR,
+        priority: u16,
+        target: QualifiedName,
+        params: Vec<u8>,
+    },
 }
 
 impl Record {
@@ -353,7 +381,10 @@ impl Record {
             | Record::NSEC { record, .. }
             | Record::DNSKEY { record, .. }
             | Record::NSEC3 { record, .. }
-            | Record::NSEC3PARAM { record, .. } => Some(&record.domain.0),
+            | Record::NSEC3PARAM { record, .. }
+            | Record::DS { record, .. }
+            | Record::SVCB { record, .. }
+            | Record::HTTPS { record, .. } => Some(&record.domain.0),
             Record::OPT { .. } => None,
         }
     }
@@ -452,6 +483,23 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 .write(flags)?
                 .write(data.len() as u16)?
                 .write(data.clone()),
+            Record::DS {
+                ref record,
+                key_tag,
+                algorithm,
+                digest_type,
+                ref digest,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(key_tag)?
+                    .write(algorithm)?
+                    .write(digest_type)?
+                    .write(digest.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
             Record::RRSIG {
                 ref record,
                 ty,
@@ -549,6 +597,27 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
 
                 out.set(start - 2, (end - start) as u16)
             }
+            Record::SVCB {
+                ref record,
+                priority,
+                ref target,
+                ref params,
+            }
+            | Record::HTTPS {
+                ref record,
+                priority,
+                ref target,
+                ref params,
+            } => {
+                let start = out.write(record)?.pos();
+                let end = out
+                    .write(priority)?
+                    .write(target)?
+                    .write(params.clone())?
+                    .pos();
+
+                out.set(start - 2, (end - start) as u16)
+            }
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);
                 Ok(out)
@@ -621,6 +690,24 @@ impl<I: IO> FromBuffer<I> for Record {
                     packet_len: record.class,
                     flags: record.ttl.into(),
                     data,
+                })
+            }
+            QueryType::DS => {
+                let start = buffer.pos();
+                let key_tag = buffer.read()?;
+                let algorithm = buffer.read()?;
+                let digest_type = buffer.read()?;
+
+                let digest_length = record.data_length as usize - (buffer.pos() - start);
+                let digest = buffer.get_range(buffer.pos(), digest_length)?.to_vec();
+                buffer.step(digest_length)?;
+
+                Ok(Record::DS {
+                    record,
+                    key_tag,
+                    algorithm,
+                    digest_type,
+                    digest,
                 })
             }
             QueryType::RRSIG => {
@@ -730,6 +817,33 @@ impl<I: IO> FromBuffer<I> for Record {
                     salt_length: salt_length as u8,
                     salt,
                 })
+            }
+            QueryType::SVCB | QueryType::HTTPS => {
+                let start = buffer.pos();
+                let priority = buffer.read()?;
+                let target = buffer.read()?;
+
+                let params_length = record.data_length as usize - (buffer.pos() - start);
+                let params = buffer.get_range(buffer.pos(), params_length)?.to_vec();
+                buffer.step(params_length)?;
+
+                println!("Priority: {priority}, Target: {target:#?}, Params: {params:#?}");
+
+                if record.query_type == QueryType::SVCB {
+                    Ok(Record::SVCB {
+                        record,
+                        priority,
+                        target,
+                        params,
+                    })
+                } else {
+                    Ok(Record::HTTPS {
+                        record,
+                        priority,
+                        target,
+                        params,
+                    })
+                }
             }
             QueryType::UNKNOWN(_) => {
                 buffer.step(record.data_length as usize)?;

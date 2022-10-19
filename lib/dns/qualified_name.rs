@@ -19,17 +19,21 @@ impl QualifiedName {
 
 impl<'a, T: IO> WriteTo<'a, T> for &QualifiedName {
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        self.name()
-            .split('.')
-            .try_fold(out, |buffer, label| {
-                let len = label.len();
-                if len > 0x3f {
-                    Err(DNSError::EndOfBuffer)
-                } else {
-                    buffer.write(len as u8)?.write(label.as_bytes())
-                }
-            })?
-            .write(0u8)
+        if self.0.is_empty() {
+            out.write(0u8)
+        } else {
+            self.name()
+                .split('.')
+                .try_fold(out, |buffer, label| {
+                    let len = label.len();
+                    if len > 0x3f {
+                        Err(DNSError::EndOfBuffer)
+                    } else {
+                        buffer.write(len as u8)?.write(label.as_bytes())
+                    }
+                })?
+                .write(0u8)
+        }
     }
 }
 
