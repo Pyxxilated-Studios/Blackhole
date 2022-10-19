@@ -26,7 +26,7 @@ impl<I: IO> FromBuffer<I> for Question {
             qtype: QueryType::from(buffer.read::<u16>()?),
         };
 
-        let _ = buffer.read::<u16>()?;
+        let _class = buffer.read::<u16>()?;
 
         Ok(question)
     }

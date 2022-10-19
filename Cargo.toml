@@ -22,7 +22,7 @@ chrono = { version = "0.4", default-features = false, features = [ "clock", "ser
 chumsky = "0.8"
 clap = { version = "4" , features = [ "derive" ] }
 criterion = { version = "0.4", default-features = false, features = [ "html_reports", "plotters", "real_blackbox" ] }
-num = { version = "0.4.0", default-features = false }
+num = { version = "0.4", default-features = false }
 opentelemetry = { version = "0.18", default-features = false, features = [ "rt-tokio" ] }
 reqwest = { version = "0.11", features = [ "brotli", "gzip" ] }
 serde = { version = "1", default-features = false, features = [ "derive" ] }

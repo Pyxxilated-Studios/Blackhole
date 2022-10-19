@@ -4,7 +4,7 @@ use blackhole::dns::{
     qualified_name::QualifiedName,
     question::Question,
     traits::FromBuffer,
-    QueryType, Record, ResultCode,
+    QueryType, Record, ResultCode, Ttl, RR,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
@@ -34,16 +34,26 @@ pub fn packet_to_buffer(c: &mut Criterion) {
             }],
             answers: vec![
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 20,
+                    },
                     priority: 10,
                     host: QualifiedName("mail.example.com".to_owned()),
-                    ttl: 3600.into(),
                 },
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 23,
+                    },
                     priority: 20,
                     host: QualifiedName("mailsec.example.com".to_owned()),
-                    ttl: 3600.into(),
                 },
             ],
             authorities: vec![],
@@ -80,16 +90,26 @@ pub fn buffer_to_packet(c: &mut Criterion) {
             }],
             answers: vec![
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 20,
+                    },
                     priority: 10,
                     host: QualifiedName("mail.example.com".to_owned()),
-                    ttl: 3600.into(),
                 },
                 Record::MX {
-                    domain: QualifiedName("example.com".to_owned()),
+                    record: RR {
+                        domain: QualifiedName("example.com".to_owned()),
+                        ttl: Ttl(3600),
+                        query_type: QueryType::MX,
+                        class: 1,
+                        data_length: 23,
+                    },
                     priority: 20,
                     host: QualifiedName("mailsec.example.com".to_owned()),
-                    ttl: 3600.into(),
                 },
             ],
             authorities: vec![],
