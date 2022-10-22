@@ -102,6 +102,11 @@ impl IO for Buffer {
         }
     }
 
+    fn read_range(&mut self, len: usize) -> Result<&[u8]> {
+        self.step(len)?;
+        self.get_range(self.pos() - len, len)
+    }
+
     fn read<T>(&'_ mut self) -> Result<T>
     where
         T: FromBuffer<Self> + Default,
@@ -178,6 +183,11 @@ impl IO for ResizableBuffer {
         } else {
             Ok(&self.buffer[start..start + len])
         }
+    }
+
+    fn read_range(&mut self, len: usize) -> Result<&[u8]> {
+        self.step(len)?;
+        self.get_range(self.pos() - len, len)
     }
 
     fn read<T>(&'_ mut self) -> Result<T>

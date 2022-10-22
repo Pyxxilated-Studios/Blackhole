@@ -87,6 +87,15 @@ pub trait IO {
     fn get_range(&self, start: usize, len: usize) -> Result<&[u8]>;
 
     ///
+    /// Read a range of bytes
+    ///
+    /// # Errors
+    /// If the number of elements wanted causes the buffer to read
+    /// past its internal state.
+    ///
+    fn read_range(&mut self, len: usize) -> Result<&[u8]>;
+
+    ///
     /// Read out an element from the buffer
     ///
     /// # Errors
