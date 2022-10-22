@@ -390,14 +390,22 @@ impl Record {
     }
 }
 
+macro_rules! write_record {
+    ($out:expr, $rr:expr, $($rdata:expr),+) => {
+        {
+            let start = $out.write($rr)?.pos();
+            let end = $out$(.write($rdata)?)+.pos();
+            $out.set(start - 2, (end - start) as u16)
+        }
+    };
+}
+
 impl<'a, T: IO> WriteTo<'a, T> for Record {
     #[allow(clippy::too_many_lines)]
     fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
         match *self {
             Record::A { ref record, addr } => {
-                let start = out.write(record)?.pos();
-                let end = out.write(u32::from(addr))?.pos();
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, u32::from(addr))
             }
             Record::NS {
                 ref record,
@@ -407,23 +415,17 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref record,
                 ref host,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out.write(host)?.pos();
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, host)
             }
             Record::MX {
                 ref record,
                 priority,
                 ref host,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out.write(priority)?.write(host)?.pos();
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, priority, host)
             }
             Record::AAAA { ref record, addr } => {
-                let start = out.write(record)?.pos();
-                let end = out.write(u128::from(addr))?.pos();
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, u128::from(addr))
             }
             Record::SOA {
                 ref record,
@@ -435,18 +437,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 expire,
                 minimum,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(m_name)?
-                    .write(r_name)?
-                    .write(serial)?
-                    .write(refresh)?
-                    .write(retry)?
-                    .write(expire)?
-                    .write(minimum)?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, m_name, r_name, serial, refresh, retry, expire, minimum)
             }
             Record::TXT {
                 ref record,
@@ -462,15 +453,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 port,
                 ref host,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(priority)?
-                    .write(weight)?
-                    .write(port)?
-                    .write(host)?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, priority, weight, port, host)
             }
             Record::OPT {
                 ref data,
@@ -490,15 +473,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 digest_type,
                 ref digest,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(key_tag)?
-                    .write(algorithm)?
-                    .write(digest_type)?
-                    .write(digest.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, key_tag, algorithm, digest_type, digest.clone())
             }
             Record::RRSIG {
                 ref record,
@@ -512,20 +487,19 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref name,
                 ref signature,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(ty)?
-                    .write(algorithm)?
-                    .write(labels)?
-                    .write(original_ttl)?
-                    .write(expiration)?
-                    .write(inception)?
-                    .write(tag)?
-                    .write(name)?
-                    .write(signature.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(
+                    out,
+                    record,
+                    ty,
+                    algorithm,
+                    labels,
+                    original_ttl,
+                    expiration,
+                    inception,
+                    tag,
+                    name,
+                    signature.clone()
+                )
             }
             Record::NSEC {
                 ref record,
@@ -542,17 +516,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 protocol,
                 algorithm,
                 ref public_key,
-            } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(flags)?
-                    .write(protocol)?
-                    .write(algorithm)?
-                    .write(public_key.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
-            }
+            } => write_record!(out, record, flags, protocol, algorithm, public_key.clone()),
             Record::NSEC3 {
                 ref record,
                 algorithm,
@@ -563,21 +527,18 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 hash_length,
                 ref hash,
                 ref type_map,
-            } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(algorithm)?
-                    .write(flags)?
-                    .write(iterations)?
-                    .write(salt_length)?
-                    .write(salt.clone())?
-                    .write(hash_length)?
-                    .write(hash.clone())?
-                    .write(type_map.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
-            }
+            } => write_record!(
+                out,
+                record,
+                algorithm,
+                flags,
+                iterations,
+                salt_length,
+                salt.clone(),
+                hash_length,
+                hash.clone(),
+                type_map.clone()
+            ),
             Record::NSEC3PARAM {
                 ref record,
                 algorithm,
@@ -586,16 +547,15 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 salt_length,
                 ref salt,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(algorithm)?
-                    .write(flags)?
-                    .write(iterations)?
-                    .write(salt_length)?
-                    .write(salt.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(
+                    out,
+                    record,
+                    algorithm,
+                    flags,
+                    iterations,
+                    salt_length,
+                    salt.clone()
+                )
             }
             Record::SVCB {
                 ref record,
@@ -609,14 +569,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref target,
                 ref params,
             } => {
-                let start = out.write(record)?.pos();
-                let end = out
-                    .write(priority)?
-                    .write(target)?
-                    .write(params.clone())?
-                    .pos();
-
-                out.set(start - 2, (end - start) as u16)
+                write_record!(out, record, priority, target, params.clone())
             }
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);
@@ -627,6 +580,39 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
 }
 
 impl<I: IO> FromBuffer<I> for Record {
+    ///
+    /// A `Record`, in accordance with [RFC-1035](https://www.rfc-editor.org/rfc/rfc1035.html)
+    /// contains the following:
+    ///
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///   |                                               |
+    ///   /                                               /
+    ///   /                      NAME                     /
+    ///   |                                               |
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///   |                      TYPE                     |
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///   |                     CLASS                     |
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///   |                      TTL                      |
+    ///   |                                               |
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///   |                   RDLENGTH                    |
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
+    ///   /                     RDATA                     /
+    ///   /                                               /
+    ///   +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    ///
+    /// Where:
+    ///  - NAME is the domain name the Record is for
+    ///  - TYPE is a type code (e.g. A)
+    ///  - CLASS is a class code (typically IN)
+    ///  - TTL an integer determining the interval for which
+    ///    the record is valid/can be cached for
+    ///  - RDLENGTH is the length of the RDATA section
+    ///  - RDATA is the information associated with the record
+    ///    (which varies depending on the TYPE).
+    ///
     #[allow(clippy::too_many_lines)]
     fn from_buffer(buffer: &mut I) -> Result<Record> {
         let record: RR = buffer.read()?;
@@ -664,12 +650,8 @@ impl<I: IO> FromBuffer<I> for Record {
                 minimum: buffer.read()?,
             }),
             QueryType::TXT => {
-                let data = String::from_utf8_lossy(
-                    buffer.get_range(buffer.pos(), record.data_length as usize)?,
-                )
-                .to_string();
-
-                buffer.step(record.data_length as usize)?;
+                let data = String::from_utf8_lossy(buffer.read_range(record.data_length as usize)?)
+                    .to_string();
 
                 Ok(Record::TXT { record, data })
             }
@@ -680,18 +662,11 @@ impl<I: IO> FromBuffer<I> for Record {
                 port: buffer.read()?,
                 host: buffer.read()?,
             }),
-            QueryType::OPT => {
-                let data = buffer
-                    .get_range(buffer.pos(), record.data_length as usize)?
-                    .to_vec();
-                buffer.step(record.data_length as usize)?;
-
-                Ok(Record::OPT {
-                    packet_len: record.class,
-                    flags: record.ttl.into(),
-                    data,
-                })
-            }
+            QueryType::OPT => Ok(Record::OPT {
+                packet_len: record.class,
+                flags: record.ttl.into(),
+                data: buffer.read_range(record.data_length as usize)?.to_vec(),
+            }),
             QueryType::DS => {
                 let start = buffer.pos();
                 let key_tag = buffer.read()?;
@@ -699,15 +674,13 @@ impl<I: IO> FromBuffer<I> for Record {
                 let digest_type = buffer.read()?;
 
                 let digest_length = record.data_length as usize - (buffer.pos() - start);
-                let digest = buffer.get_range(buffer.pos(), digest_length)?.to_vec();
-                buffer.step(digest_length)?;
 
                 Ok(Record::DS {
                     record,
                     key_tag,
                     algorithm,
                     digest_type,
-                    digest,
+                    digest: buffer.read_range(digest_length)?.to_vec(),
                 })
             }
             QueryType::RRSIG => {
@@ -722,8 +695,6 @@ impl<I: IO> FromBuffer<I> for Record {
                 let name = buffer.read()?;
 
                 let sign_len = record.data_length as usize - (buffer.pos() - start);
-                let signature = buffer.get_range(buffer.pos(), sign_len)?.to_vec();
-                buffer.step(sign_len)?;
 
                 Ok(Record::RRSIG {
                     record,
@@ -735,7 +706,7 @@ impl<I: IO> FromBuffer<I> for Record {
                     inception,
                     tag,
                     name,
-                    signature,
+                    signature: buffer.read_range(sign_len)?.to_vec(),
                 })
             }
             QueryType::NSEC => {
@@ -743,24 +714,18 @@ impl<I: IO> FromBuffer<I> for Record {
                 let next_domain = buffer.read()?;
 
                 let map_len = record.data_length as usize - (buffer.pos() - start);
-                let type_map = buffer.get_range(buffer.pos(), map_len)?.to_vec();
-                buffer.step(map_len)?;
 
                 Ok(Record::NSEC {
                     record,
                     next_domain,
-                    type_map,
+                    type_map: buffer.read_range(map_len)?.to_vec(),
                 })
             }
             QueryType::DNSKEY => {
                 let flags = buffer.read()?;
                 let protocol = buffer.read()?;
                 let algorithm = buffer.read()?;
-                let public_key = buffer
-                    .get_range(buffer.pos(), record.data_length as usize - 4)?
-                    .to_vec();
-
-                buffer.step(record.data_length as usize - 4)?;
+                let public_key = buffer.read_range(record.data_length as usize - 4)?.to_vec();
 
                 Ok(Record::DNSKEY {
                     record,
@@ -777,16 +742,13 @@ impl<I: IO> FromBuffer<I> for Record {
                 let iterations = buffer.read()?;
 
                 let salt_length = buffer.read()?;
-                let salt = buffer.get_range(buffer.pos(), salt_length)?.to_vec();
-                buffer.step(salt_length)?;
+                let salt = buffer.read_range(salt_length)?.to_vec();
 
                 let hash_length = buffer.read()?;
-                let hash = buffer.get_range(buffer.pos(), hash_length)?.to_vec();
-                buffer.step(hash_length)?;
+                let hash = buffer.read_range(hash_length)?.to_vec();
 
                 let map_len = record.data_length as usize - (buffer.pos() - start);
-                let type_map = buffer.get_range(buffer.pos(), map_len)?.to_vec();
-                buffer.step(map_len)?;
+                let type_map = buffer.read_range(map_len)?.to_vec();
 
                 Ok(Record::NSEC3 {
                     record,
@@ -806,8 +768,6 @@ impl<I: IO> FromBuffer<I> for Record {
                 let iterations = buffer.read()?;
 
                 let salt_length = buffer.read()?;
-                let salt = buffer.get_range(buffer.pos(), salt_length)?.to_vec();
-                buffer.step(salt_length)?;
 
                 Ok(Record::NSEC3PARAM {
                     record,
@@ -815,7 +775,7 @@ impl<I: IO> FromBuffer<I> for Record {
                     flags,
                     iterations,
                     salt_length: salt_length as u8,
-                    salt,
+                    salt: buffer.read_range(salt_length)?.to_vec(),
                 })
             }
             QueryType::SVCB | QueryType::HTTPS => {
@@ -824,10 +784,7 @@ impl<I: IO> FromBuffer<I> for Record {
                 let target = buffer.read()?;
 
                 let params_length = record.data_length as usize - (buffer.pos() - start);
-                let params = buffer.get_range(buffer.pos(), params_length)?.to_vec();
-                buffer.step(params_length)?;
-
-                println!("Priority: {priority}, Target: {target:#?}, Params: {params:#?}");
+                let params = buffer.read_range(params_length)?.to_vec();
 
                 if record.query_type == QueryType::SVCB {
                     Ok(Record::SVCB {
@@ -847,7 +804,6 @@ impl<I: IO> FromBuffer<I> for Record {
             }
             QueryType::UNKNOWN(_) => {
                 buffer.step(record.data_length as usize)?;
-
                 Ok(Record::UNKNOWN { record })
             }
         }
