@@ -12,6 +12,7 @@ use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument, log::trace};
 
 use crate::{
+    cache::Cache,
     config::Config,
     dns::{
         packet::{Buffer, Packet, ResizableBuffer},
@@ -21,7 +22,7 @@ use crate::{
         DNSError, QueryType, Record, Result, ResultCode, Ttl, RR,
     },
     filter::{Filter, Kind, Rewrite, Rule},
-    statistics::{Average, Request, Statistic, STATISTICS},
+    statistics::{Average, Request, Statistic, Statistics},
 };
 
 pub struct ServerBuilder {
@@ -118,6 +119,7 @@ struct Handler<I> {
     status: ResultCode,
     elapsed: usize,
     timestamp: DateTime<Utc>,
+    cached: bool,
     phantom: PhantomData<I>,
 }
 
@@ -315,31 +317,42 @@ where
 
         let start = Instant::now();
 
-        match handler.filter(packet).await {
-            Ok(response_packet) => {
-                let id = response_packet.header.id;
+        if let Some(mut cached) = Cache::get(&packet).await {
+            cached.header.id = id;
+            handler.cached = true;
+            handler.question = packet.questions[0].clone();
 
-                if let Err(err) = handler.respond(&socket, response_packet, address).await {
+            if let Err(err) = handler.respond(&socket, cached, address).await {
+                error!("{err:?}");
+                handler.respond_error(&socket, address, id).await;
+            }
+        } else {
+            match handler.filter(packet).await {
+                Ok(response_packet) => {
+                    let id = response_packet.header.id;
+
+                    Cache::insert(response_packet.clone()).await;
+
+                    if let Err(err) = handler.respond(&socket, response_packet, address).await {
+                        error!("{err:?}");
+                        handler.respond_error(&socket, address, id).await;
+                    }
+                }
+                Err(err) => {
                     error!("{err:?}");
                     handler.respond_error(&socket, address, id).await;
                 }
-            }
-            Err(err) => {
-                error!("{err:?}");
-                handler.respond_error(&socket, address, id).await;
             }
         }
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        STATISTICS
-            .write()
-            .await
-            .record(Statistic::Average(Average {
-                count: 1,
-                average: handler.elapsed,
-            }))
-            .record(Statistic::Request(handler.into()));
+        Statistics::record(Statistic::Average(Average {
+            count: 1,
+            average: handler.elapsed,
+        }))
+        .await;
+        Statistics::record(Statistic::Request(handler.into())).await;
     }
 }
 
@@ -353,6 +366,7 @@ impl<I> From<Handler<I>> for Request {
             status: handler.status,
             elapsed: handler.elapsed,
             timestamp: handler.timestamp,
+            cached: handler.cached,
         }
     }
 }

@@ -13,14 +13,26 @@ use crate::{
     filter::Rule,
 };
 
-pub static STATISTICS: LazyLock<Arc<RwLock<Statistics>>> = LazyLock::new(Arc::default);
+static STATISTICS: LazyLock<Arc<RwLock<Statistics>>> = LazyLock::new(Arc::default);
 
 pub const REQUEST: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";
+pub const CACHE: &str = "cache";
 
 impl Statistic {
     fn record(self, stats: &mut HashMap<&'static str, Statistic>) {
         match self {
+            Statistic::Cache(cache) => match stats
+                .entry(CACHE)
+                .or_insert(Statistic::Cache(Cache::default()))
+            {
+                Statistic::Cache(exists) => {
+                    exists.hits += cache.hits;
+                    exists.misses += cache.misses;
+                    exists.size += cache.size;
+                }
+                _ => unreachable!(),
+            },
             Statistic::Count(count) => match stats
                 .entry(AVERAGE_REQUEST_TIME)
                 .or_insert(Statistic::Count(0))
@@ -69,6 +81,13 @@ pub struct Average {
 }
 
 #[derive(Serialize, Clone, Default)]
+pub struct Cache {
+    pub size: usize,
+    pub hits: usize,
+    pub misses: usize,
+}
+
+#[derive(Serialize, Clone, Default)]
 pub struct Request {
     pub client: String,
     pub question: Question,
@@ -77,6 +96,7 @@ pub struct Request {
     pub status: ResultCode,
     pub elapsed: usize,
     pub timestamp: DateTime<Utc>,
+    pub cached: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -85,6 +105,7 @@ pub enum Statistic {
     Average(Average),
     Request(Request),
     Requests(Vec<Request>),
+    Cache(Cache),
 }
 
 #[derive(Default)]
@@ -94,18 +115,20 @@ pub struct Statistics {
 
 impl Statistics {
     #[inline]
-    pub fn record(&mut self, value: Statistic) -> &mut Statistics {
-        value.record(&mut self.statistics);
-        self
+    pub async fn record(value: Statistic) {
+        let mut statistics = STATISTICS.write().await;
+        value.record(&mut statistics.statistics);
     }
 
     #[inline]
-    pub fn retrieve(&self, statistic: &str) -> Option<&Statistic> {
-        self.statistics.get(statistic)
+    pub async fn retrieve(statistic: &str) -> Option<Statistic> {
+        let statistics = STATISTICS.read().await;
+        statistics.statistics.get(statistic).cloned()
     }
 
     #[inline]
-    pub fn statistics(&self) -> &HashMap<&'static str, Statistic> {
-        &self.statistics
+    pub async fn statistics() -> HashMap<&'static str, Statistic> {
+        let statistics = STATISTICS.read().await;
+        statistics.statistics.clone()
     }
 }
