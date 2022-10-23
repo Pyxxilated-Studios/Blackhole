@@ -283,7 +283,7 @@ pub enum Record {
     },
     TXT {
         record: RR,
-        data: String,
+        data: Vec<u8>,
     },
     AAAA {
         record: RR,
@@ -388,6 +388,52 @@ impl Record {
             Record::OPT { .. } => None,
         }
     }
+
+    pub fn record(&self) -> Option<&RR> {
+        match self {
+            Record::UNKNOWN { record, .. }
+            | Record::A { record, .. }
+            | Record::NS { record, .. }
+            | Record::CNAME { record, .. }
+            | Record::SOA { record, .. }
+            | Record::MX { record, .. }
+            | Record::TXT { record, .. }
+            | Record::AAAA { record, .. }
+            | Record::SRV { record, .. }
+            | Record::RRSIG { record, .. }
+            | Record::NSEC { record, .. }
+            | Record::DNSKEY { record, .. }
+            | Record::NSEC3 { record, .. }
+            | Record::NSEC3PARAM { record, .. }
+            | Record::DS { record, .. }
+            | Record::SVCB { record, .. }
+            | Record::HTTPS { record, .. } => Some(record),
+            Record::OPT { .. } => None,
+        }
+    }
+
+    pub fn ttl(&self) -> Option<Ttl> {
+        match self {
+            Record::UNKNOWN { record, .. }
+            | Record::A { record, .. }
+            | Record::NS { record, .. }
+            | Record::CNAME { record, .. }
+            | Record::SOA { record, .. }
+            | Record::MX { record, .. }
+            | Record::TXT { record, .. }
+            | Record::AAAA { record, .. }
+            | Record::SRV { record, .. }
+            | Record::RRSIG { record, .. }
+            | Record::NSEC { record, .. }
+            | Record::DNSKEY { record, .. }
+            | Record::NSEC3 { record, .. }
+            | Record::NSEC3PARAM { record, .. }
+            | Record::DS { record, .. }
+            | Record::SVCB { record, .. }
+            | Record::HTTPS { record, .. } => Some(record.ttl),
+            Record::OPT { .. } => None,
+        }
+    }
 }
 
 macro_rules! write_record {
@@ -442,10 +488,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
             Record::TXT {
                 ref record,
                 ref data,
-            } => out
-                .write(record)?
-                .write(data.len() as u16)?
-                .write(data.as_bytes()),
+            } => write_record!(out, record, data.clone()),
             Record::SRV {
                 ref record,
                 priority,
@@ -505,11 +548,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref record,
                 ref next_domain,
                 ref type_map,
-            } => out
-                .write(record)?
-                .write((type_map.len() + next_domain.0.len()) as u16)?
-                .write(next_domain)?
-                .write(type_map.clone()),
+            } => write_record!(out, record, next_domain, type_map.clone()),
             Record::DNSKEY {
                 ref record,
                 flags,
@@ -650,8 +689,7 @@ impl<I: IO> FromBuffer<I> for Record {
                 minimum: buffer.read()?,
             }),
             QueryType::TXT => {
-                let data = String::from_utf8_lossy(buffer.read_range(record.data_length as usize)?)
-                    .to_string();
+                let data = buffer.read_range(record.data_length as usize)?.to_vec();
 
                 Ok(Record::TXT { record, data })
             }

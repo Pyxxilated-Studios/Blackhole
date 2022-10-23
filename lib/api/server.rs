@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use serde_json::json;
 use warp::{http::Response, hyper::header::CONTENT_TYPE, Filter};
 
-use crate::statistics::STATISTICS;
+use crate::statistics::Statistics;
 
 #[derive(Clone)]
 pub struct Server;
@@ -26,21 +26,17 @@ impl Server {
     async fn all() -> Result<impl warp::Reply, Infallible> {
         Ok(Response::builder()
             .header(CONTENT_TYPE, "application/json")
-            .body(json!(STATISTICS.read().await.statistics()).to_string()))
+            .body(json!(Statistics::statistics().await).to_string()))
     }
 
     async fn statistics(statistic: String) -> Result<impl warp::Reply, Infallible> {
-        match STATISTICS
-            .read()
-            .await
-            .retrieve(&statistic.to_ascii_lowercase())
-        {
+        match Statistics::retrieve(&statistic.to_ascii_lowercase()).await {
             Some(requests) => Ok(Response::builder()
                 .header(CONTENT_TYPE, "application/json")
                 .body(json!(requests).to_string())),
             None => Ok(Response::builder()
                 .header(CONTENT_TYPE, "application/json")
-                .body(String::default())),
+                .body(String::from("{}"))),
         }
     }
 }
