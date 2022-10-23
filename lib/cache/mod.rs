@@ -10,19 +10,28 @@ use tokio::sync::RwLock;
 use crate::{
     dns::{
         packet::{Packet, DNS_PACKET_SIZE},
-        QueryType, Record,
+        QueryType,
     },
     statistics::{self, Statistic, Statistics},
 };
 
+type PacketExpires = (Packet, Vec<DateTime<Utc>>);
+
 #[derive(Debug, Default)]
 pub struct Cache {
-    cache: HashMap<String, HashMap<QueryType, (Packet, Vec<DateTime<Utc>>)>>,
+    cache: HashMap<String, HashMap<QueryType, PacketExpires>>,
 }
 
 static CACHE: LazyLock<Arc<RwLock<Cache>>> = LazyLock::new(Arc::default);
 
 impl Cache {
+    ///
+    /// Retrieve an entry from the cache, if it exists
+    ///
+    /// # Panics
+    /// The only way this may panic is if one of the answer
+    /// records does not have a TTL (e.g. [`OPT`])
+    ///
     pub async fn get(packet: &Packet) -> Option<Packet> {
         let cache = CACHE.read().await;
 
@@ -71,7 +80,7 @@ impl Cache {
             hits: 0,
             misses: 1,
             size: size_of::<String>() * key.capacity()
-                + size_of::<HashMap<QueryType, (Packet, Vec<DateTime<Utc>>)>>()
+                + size_of::<HashMap<QueryType, PacketExpires>>()
                 + DNS_PACKET_SIZE,
         }))
         .await;
