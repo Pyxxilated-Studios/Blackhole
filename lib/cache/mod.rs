@@ -17,7 +17,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Cache {
-    cache: HashMap<String, HashMap<QueryType, (Packet, DateTime<Utc>)>>,
+    cache: HashMap<String, HashMap<QueryType, (Packet, Vec<DateTime<Utc>>)>>,
 }
 
 static CACHE: LazyLock<Arc<RwLock<Cache>>> = LazyLock::new(Arc::default);
@@ -33,17 +33,32 @@ impl Cache {
             .cloned();
 
         match response {
-            Some((packet, expires)) if expires >= Utc::now() => {
-                Statistics::record(Statistic::Cache(statistics::Cache {
-                    hits: 1,
-                    misses: 0,
-                    size: 0,
-                }))
-                .await;
+            Some((mut packet, expires)) => {
+                if expires.iter().any(|expire| *expire <= Utc::now()) {
+                    None
+                } else {
+                    Statistics::record(Statistic::Cache(statistics::Cache {
+                        hits: 1,
+                        misses: 0,
+                        size: 0,
+                    }))
+                    .await;
 
-                Some(packet)
+                    packet.answers = packet
+                        .answers
+                        .into_iter()
+                        .zip(expires.into_iter())
+                        .map(|(mut answer, expire)| {
+                            answer.record().unwrap().ttl =
+                                ((expire - Utc::now()).num_seconds() as u32).into();
+                            answer
+                        })
+                        .collect();
+
+                    Some(packet)
+                }
             }
-            _ => None,
+            None => None,
         }
     }
 
@@ -51,17 +66,12 @@ impl Cache {
         let mut cache = CACHE.write().await;
 
         let key = packet.questions[0].name.name().clone();
-        let ttl = packet
-            .answers
-            .first()
-            .and_then(Record::ttl)
-            .unwrap_or_default();
 
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
             misses: 1,
             size: size_of::<String>() * key.capacity()
-                + size_of::<HashMap<QueryType, (Packet, DateTime<Utc>)>>()
+                + size_of::<HashMap<QueryType, (Packet, Vec<DateTime<Utc>>)>>()
                 + DNS_PACKET_SIZE,
         }))
         .await;
@@ -73,7 +83,14 @@ impl Cache {
             .entry(packet.questions[0].qtype)
             .or_default() = (
             packet.clone(),
-            Utc::now() + Duration::seconds(i64::from(u32::from(ttl))),
+            packet
+                .answers
+                .iter()
+                .map(|answer| {
+                    Utc::now()
+                        + Duration::seconds(i64::from(u32::from(answer.ttl().unwrap_or_default())))
+                })
+                .collect(),
         );
     }
 }
