@@ -389,25 +389,25 @@ impl Record {
         }
     }
 
-    pub fn record(&self) -> Option<&RR> {
+    pub fn record(&mut self) -> Option<&mut RR> {
         match self {
-            Record::UNKNOWN { record, .. }
-            | Record::A { record, .. }
-            | Record::NS { record, .. }
-            | Record::CNAME { record, .. }
-            | Record::SOA { record, .. }
-            | Record::MX { record, .. }
-            | Record::TXT { record, .. }
-            | Record::AAAA { record, .. }
-            | Record::SRV { record, .. }
-            | Record::RRSIG { record, .. }
-            | Record::NSEC { record, .. }
-            | Record::DNSKEY { record, .. }
-            | Record::NSEC3 { record, .. }
-            | Record::NSEC3PARAM { record, .. }
-            | Record::DS { record, .. }
-            | Record::SVCB { record, .. }
-            | Record::HTTPS { record, .. } => Some(record),
+            Record::UNKNOWN { ref mut record, .. }
+            | Record::A { ref mut record, .. }
+            | Record::NS { ref mut record, .. }
+            | Record::CNAME { ref mut record, .. }
+            | Record::SOA { ref mut record, .. }
+            | Record::MX { ref mut record, .. }
+            | Record::TXT { ref mut record, .. }
+            | Record::AAAA { ref mut record, .. }
+            | Record::SRV { ref mut record, .. }
+            | Record::RRSIG { ref mut record, .. }
+            | Record::NSEC { ref mut record, .. }
+            | Record::DNSKEY { ref mut record, .. }
+            | Record::NSEC3 { ref mut record, .. }
+            | Record::NSEC3PARAM { ref mut record, .. }
+            | Record::DS { ref mut record, .. }
+            | Record::SVCB { ref mut record, .. }
+            | Record::HTTPS { ref mut record, .. } => Some(record),
             Record::OPT { .. } => None,
         }
     }
