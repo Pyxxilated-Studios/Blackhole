@@ -210,8 +210,6 @@ where
 
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
 
-        self.question = packet.questions[0].clone();
-
         let buffer = I::try_from(packet)?;
 
         forwarder
@@ -245,7 +243,7 @@ where
                         packet.answers = vec![Record::A {
                             record: RR {
                                 domain: QualifiedName(packet.questions[0].name.name()),
-                                ttl: Ttl(10),
+                                ttl: Ttl(600),
                                 query_type: QueryType::A,
                                 class: 1,
                                 data_length: 0,
@@ -273,7 +271,7 @@ where
                         packet.answers = vec![Record::AAAA {
                             record: RR {
                                 domain: QualifiedName(packet.questions[0].name.name()),
-                                ttl: Ttl(10),
+                                ttl: Ttl(600),
                                 query_type: QueryType::AAAA,
                                 class: 1,
                                 data_length: 0,
@@ -310,6 +308,7 @@ where
         let mut handler = Handler::<I> {
             client: address.ip().to_string(),
             timestamp: Utc::now(),
+            question: packet.questions[0].clone(),
             ..Default::default()
         };
 
@@ -320,7 +319,6 @@ where
         if let Some(mut cached) = Cache::get(&packet).await {
             cached.header.id = id;
             handler.cached = true;
-            handler.question = packet.questions[0].clone();
 
             if let Err(err) = handler.respond(&socket, cached, address).await {
                 error!("{err:?}");

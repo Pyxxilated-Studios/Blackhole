@@ -28,7 +28,7 @@
     </div>
 </nav>
 
-<main class="w-full mx-auto prose-xl pb-12 px-8">
+<main class="w-full mx-auto prose-xl pb-12 px-8 mb-12">
     <slot />
 </main>
 

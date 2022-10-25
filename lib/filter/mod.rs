@@ -1,6 +1,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     hash::{Hash, Hasher},
+    io::BufRead,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     str::FromStr,
@@ -8,6 +9,7 @@ use std::{
 };
 
 use chumsky::{prelude::*, text::newline};
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -85,11 +87,20 @@ impl Filter {
     pub async fn update() {
         let filters = config::Config::get(|config| config.filters.clone()).await;
 
-        for filter in filters {
-            info!("Fetching {}", filter.url);
-            if let Err(err) = Self::download(filter).await {
-                error!("{err}");
-            }
+        let tasks = filters
+            .into_iter()
+            .map(|filter| {
+                tokio::spawn(async move {
+                    info!("Fetching {}", filter.url);
+                    if let Err(err) = Self::download(filter).await {
+                        error!("{err}");
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for task in tasks {
+            tokio::join!(task).0.unwrap();
         }
     }
 
@@ -212,17 +223,30 @@ impl Filter {
     /// # Errors
     /// This will only fail if the lexer fails (i.e. the filter list is invalid)
     ///
-    pub fn parse(file: &Path) -> Result<Option<Vec<Type>>, Error> {
-        let src = std::fs::read_to_string(file)?;
+    pub fn parse(file: &Path) -> Result<Vec<Type>, Error> {
+        let file = std::fs::File::open(file)?;
+        let reader = std::io::BufReader::new(file);
 
-        let (entries, errors) = Self::lex().parse_recovery(src);
+        reader
+            .lines()
+            .filter_map(Result::ok)
+            .par_bridge()
+            .try_fold(Vec::default, |mut entries, line| {
+                let (l, errors) = Self::lex().parse_recovery(line);
 
-        if errors.is_empty() {
-            Ok(entries)
-        } else {
-            println!("{errors:#?}");
-            Err(Error::FilterError(String::from("Invalid filter list")))
-        }
+                if errors.is_empty() {
+                    if let Some(ents) = l {
+                        entries.extend(ents);
+                    }
+                    Ok(entries)
+                } else {
+                    Err(Error::FilterError(String::from("Invalid filter list")))
+                }
+            })
+            .try_reduce(Vec::default, |mut entries, ents| {
+                entries.extend(ents);
+                Ok(entries)
+            })
     }
 
     fn insert(&mut self, entry: Type) {
@@ -312,7 +336,7 @@ impl Filter {
         list.hash(&mut hasher);
         let file = format!("{}.txt", hasher.finish());
 
-        let entries = Self::parse(Path::new(&file))?.unwrap();
+        let entries = Self::parse(Path::new(&file))?;
 
         info!("Loaded {} filter(s)", entries.len());
 

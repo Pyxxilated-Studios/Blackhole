@@ -121,9 +121,33 @@ impl Statistics {
     }
 
     #[inline]
-    pub async fn retrieve(statistic: &str) -> Option<Statistic> {
+    pub async fn retrieve(
+        statistic: &str,
+        from: Option<String>,
+        to: Option<String>,
+    ) -> Option<Statistic> {
         let statistics = STATISTICS.read().await;
-        statistics.statistics.get(statistic).cloned()
+
+        match statistics.statistics.get(statistic) {
+            Some(&Statistic::Requests(ref requests)) => {
+                let len = requests.len();
+
+                let from = from.map_or(0, |from| from.parse().unwrap_or_default());
+                let to = to.map_or(len, |to| to.parse().unwrap_or(len));
+
+                let mut requests = requests
+                    .iter()
+                    .skip(from)
+                    .take(to - from)
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                requests.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                Some(Statistic::Requests(requests))
+            }
+            stat => stat.cloned(),
+        }
     }
 
     #[inline]

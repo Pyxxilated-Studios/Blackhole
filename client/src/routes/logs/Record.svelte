@@ -12,7 +12,7 @@
     {:else if ty === "A" || ty === "AAAA"}
         {record.addr}
     {:else if ty === "CNAME"}
-        {record.data}
+        {record.host}
     {/if}
     (ttl={record.record.ttl})
 </p>
