@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Average, Cache } from "src/types";
-    import { onMount, onDestroy } from "svelte";
+    import { onMount } from "svelte";
 
     let cache: Cache;
     let average: Average;
@@ -32,14 +32,8 @@
         }
     };
 
-    const interval = setInterval(refetch, 30000);
-
     onMount(() => {
         refetch();
-    });
-
-    onDestroy(() => {
-        clearInterval(interval);
     });
 </script>
 
@@ -70,6 +64,6 @@
     <p>
         Average Time: {(average.average / 1000000).toFixed(3)} ms
     </p>
-{:else if error}
-    <p>{error}</p>
 {/if}
+
+<button class="btn btn-wide" on:click={refetch}>Refresh</button>

@@ -63,9 +63,9 @@ async fn main() {
     .unwrap();
     blackhole::config::Config::load(cli).await.unwrap();
 
-    let api_server = tokio::spawn(async move { blackhole::api::server::Server.run().await });
+    let api_server = tokio::spawn(async move { blackhole::api::Server.run().await });
 
-    blackhole::filter::Filter::update().await;
+    let filter = tokio::spawn(async move { blackhole::filter::Filter::update().await });
 
-    let _joins = tokio::join!(udp_server, api_server);
+    let _joins = tokio::join!(udp_server, api_server, filter);
 }
