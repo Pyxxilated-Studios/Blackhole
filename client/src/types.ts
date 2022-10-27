@@ -9,6 +9,12 @@ type CNAME = { CNAME: { record: RR; host: string } };
 
 type Answer = MX | TXT | A | AAAA | NS | CNAME;
 
+type Rule = {
+    action: unknown;
+    domain: string;
+    ty: "Deny" | "Allow";
+};
+
 interface Request {
     client: string;
     answers: Answer[];
@@ -17,6 +23,7 @@ interface Request {
     elapsed: number;
     timestamp: number;
     cached: boolean;
+    rule: Rule | null;
 }
 
 type Requests = Request[];
