@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use blackhole::dns::{
     header::Header,
     packet::{Buffer, Packet},
@@ -122,5 +124,13 @@ pub fn buffer_to_packet(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, packet_to_buffer, buffer_to_packet);
+fn filter_parsing(c: &mut Criterion) {
+    c.bench_function("parsing a filter list", |b| {
+        b.iter(|| {
+            black_box(blackhole::filter::Filter::parse(Path::new("benches/test.txt")).unwrap())
+        })
+    });
+}
+
+criterion_group!(benches, packet_to_buffer, buffer_to_packet, filter_parsing);
 criterion_main!(benches);
