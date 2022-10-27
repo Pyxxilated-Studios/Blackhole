@@ -12,6 +12,7 @@
         "format": "prettier --write ."
     },
     "devDependencies": {
+        "@catppuccin/tailwindcss": "^0.1.1",
         "@fullhuman/postcss-purgecss": "^5",
         "@sveltejs/adapter-node": "next",
         "@sveltejs/kit": "next",
@@ -36,6 +37,7 @@
         "vite": "^3"
     },
     "dependencies": {
+        "svelte-frappe-charts": "^1.9.2",
         "svelte-inview": "^3"
     },
     "type": "module"

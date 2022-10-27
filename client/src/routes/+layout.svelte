@@ -16,11 +16,6 @@
                 </a>
             </li>
             <li>
-                <a href="/stats/" class="hover:text-secondary transition-colors duration-300"
-                    >Statistics</a
-                >
-            </li>
-            <li>
                 <a href="/logs/" class="hover:text-secondary transition-colors duration-300">Logs</a
                 >
             </li>

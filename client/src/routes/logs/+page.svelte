@@ -10,10 +10,10 @@
     let error: unknown | undefined = undefined;
 
     let count = 25;
-    let shown_requests: Requests;
+    let shownRequests: Requests;
 
     $: {
-        if (requests) shown_requests = requests.slice(0, count);
+        if (requests) shownRequests = requests.slice(0, count);
     }
 
     const refetch = async () => {
@@ -26,7 +26,7 @@
                         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                     )
                 );
-                shown_requests = requests.slice(0, count);
+                shownRequests = requests.slice(0, count);
                 error = undefined;
             } else {
                 error = resp.statusText;
@@ -61,8 +61,8 @@
         </thead>
         <tbody>
             {#if requests}
-                {#each shown_requests as request, idx (request.timestamp)}
-                    {#if idx == shown_requests.length - 1}
+                {#each shownRequests as request, idx (request.timestamp)}
+                    {#if idx == shownRequests.length - 1}
                         <tr
                             use:inview
                             on:enter={(event) => {

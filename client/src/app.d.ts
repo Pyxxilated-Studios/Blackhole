@@ -8,3 +8,4 @@ declare namespace App {
 }
 
 declare module "rollup-plugin-uglify";
+declare module "svelte-frappe-charts";
