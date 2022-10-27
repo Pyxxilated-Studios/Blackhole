@@ -25,6 +25,8 @@ pub enum DNSError {
     Io(#[from] std::io::Error),
     #[error("End of Buffer")]
     EndOfBuffer,
+    #[error("Timeout")]
+    Timeout(#[from] tokio::time::error::Elapsed),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;

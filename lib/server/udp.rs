@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
@@ -103,10 +103,15 @@ impl Server {
 
         let sock = self.socket.read().await;
         sock.readable().await?;
-        let (bytes, address) = sock.recv_from(buffer.buffer_mut()).await?;
-        trace!("DNS request received from {address}: {bytes}");
+        let (_bytes, address) = sock.recv_from(buffer.buffer_mut()).await?;
 
-        Ok((Packet::from_buffer(&mut buffer)?, address))
+        let packet = Packet::from_buffer(&mut buffer)?;
+        trace!(
+            "DNS request received from {address}: ID: {}",
+            packet.header.id
+        );
+
+        Ok((packet, address))
     }
 }
 
@@ -206,18 +211,28 @@ where
 
     #[instrument(skip(self, packet))]
     async fn forward(&mut self, packet: Packet) -> Result<Packet> {
+        trace!("Forwarding packet: ID: {}", packet.header.id);
+
         let server = Config::get(|config| config.upstreams.iter().next().unwrap().clone()).await;
 
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
 
         let buffer = I::try_from(packet)?;
 
-        forwarder
-            .send_to(buffer.get_range(0, buffer.pos())?, (server.ip, server.port))
-            .await?;
+        forwarder.set_tos(0xFE)?;
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            forwarder.send_to(buffer.get_range(0, buffer.pos())?, (server.ip, server.port)),
+        )
+        .await??;
 
         let mut res_buffer = Buffer::default();
-        forwarder.recv_from(res_buffer.buffer_mut()).await?;
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            forwarder.recv_from(res_buffer.buffer_mut()),
+        )
+        .await??;
 
         Packet::from_buffer(&mut res_buffer)
     }
@@ -229,6 +244,7 @@ where
                 self.forward(packet).await
             }
             Some(rule) if rule.ty == Kind::Deny => {
+                self.rule = Some(rule.clone());
                 let mut packet = packet;
                 packet.header.recursion_available = true;
                 packet.header.response = true;
@@ -250,7 +266,6 @@ where
                             },
                             addr: match rule
                                 .action
-                                .clone()
                                 .and_then(|action| action.rewrite)
                                 .unwrap_or(Rewrite {
                                     v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -278,7 +293,6 @@ where
                             },
                             addr: match rule
                                 .action
-                                .clone()
                                 .and_then(|action| action.rewrite)
                                 .unwrap_or(Rewrite {
                                     v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -295,8 +309,6 @@ where
                 }
                 packet.authorities = vec![];
                 packet.resources = vec![];
-
-                self.rule = Some(rule);
 
                 Ok(packet)
             }
@@ -319,6 +331,7 @@ where
         if let Some(mut cached) = Cache::get(&packet).await {
             cached.header.id = id;
             handler.cached = true;
+            handler.rule = Filter::check(&packet);
 
             if let Err(err) = handler.respond(&socket, cached, address).await {
                 error!("{err:?}");
