@@ -82,6 +82,12 @@ pub enum Error {
     FilterError(String),
 }
 
+fn file_name_for(list: &FilterList) -> String {
+    let mut hasher = DefaultHasher::new();
+    list.hash(&mut hasher);
+    format!("{}.txt", hasher.finish())
+}
+
 impl Filter {
     #[instrument(level = "info")]
     pub async fn update() {
@@ -91,7 +97,6 @@ impl Filter {
             .into_iter()
             .map(|filter| {
                 tokio::spawn(async move {
-                    info!("Fetching {}", filter.url);
                     if let Err(err) = Self::download(filter).await {
                         error!("{err}");
                     }
@@ -105,20 +110,25 @@ impl Filter {
     }
 
     async fn download(filter: FilterList) -> Result<(), Error> {
-        let client = reqwest::Client::builder().brotli(true).build().unwrap();
+        if !Path::new(&file_name_for(&filter)).exists() {
+            info!("Fetching {}", filter.url);
 
-        let response = client.get(&filter.url).send().await?;
+            let client = reqwest::Client::builder()
+                .brotli(true)
+                .gzip(true)
+                .build()
+                .unwrap();
 
-        if !response.status().is_success() {
-            return Err(Error::from(response.error_for_status().expect_err("")));
+            let response = client.get(&filter.url).send().await?;
+
+            if !response.status().is_success() {
+                return Err(Error::from(response.error_for_status().expect_err("")));
+            }
+
+            let contents = response.text().await?;
+
+            std::fs::write(file_name_for(&filter), contents)?;
         }
-
-        let contents = response.text().await?;
-
-        let mut hasher = DefaultHasher::new();
-        filter.hash(&mut hasher);
-        let file = format!("{}.txt", hasher.finish());
-        std::fs::write(file.clone(), contents)?;
 
         Self::import(filter).await
     }
@@ -332,13 +342,11 @@ impl Filter {
     pub async fn import(mut list: FilterList) -> Result<(), Error> {
         info!("loading filter list: {}", list.name);
 
-        let mut hasher = DefaultHasher::new();
-        list.hash(&mut hasher);
-        let file = format!("{}.txt", hasher.finish());
+        let file = file_name_for(&list);
 
         let entries = Self::parse(Path::new(&file))?;
 
-        info!("Loaded {} filter(s)", entries.len());
+        info!("Loaded {} filter(s) for {}", entries.len(), list.name);
 
         list.entries = entries.len();
 

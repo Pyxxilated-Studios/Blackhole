@@ -79,9 +79,7 @@ impl Cache {
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
             misses: 1,
-            size: size_of::<String>() * key.capacity()
-                + size_of::<HashMap<QueryType, PacketExpires>>()
-                + DNS_PACKET_SIZE,
+            size: key.capacity() + size_of::<HashMap<QueryType, PacketExpires>>() + DNS_PACKET_SIZE,
         }))
         .await;
 
