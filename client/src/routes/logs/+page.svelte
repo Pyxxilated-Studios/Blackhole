@@ -51,7 +51,7 @@
 </div>
 
 <div class="overflow-x-auto">
-    <table class="table w-full">
+    <table class="table table-zebra w-full">
         <thead>
             <tr>
                 <th class="sticky top-0">Time</th>

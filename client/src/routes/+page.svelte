@@ -30,6 +30,18 @@
         ],
     };
 
+    const byteString = (bytes: number): string => {
+        if (bytes < 1000) {
+            return `${bytes} B`;
+        } else if (bytes < 1000000) {
+            return `${bytes / 1000} KB`;
+        } else if (bytes < 1000000000) {
+            return `${bytes / 1000000} MB`;
+        } else {
+            return `${bytes / 1000000000} GB`;
+        }
+    };
+
     const refetch = async () => {
         try {
             const [cacheResponse, averageResponse, requestsResponse] = await Promise.all([
@@ -42,6 +54,7 @@
 
             if (cacheResponse.ok) {
                 cache = (await cacheResponse.json()).Cache;
+
                 error = undefined;
             } else {
                 error = cacheResponse.statusText;
@@ -119,20 +132,26 @@
         <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
     </div>
 
-    {#if cache}
-        <p>
-            Cache Size: {cache.size} Bytes
-        </p>
-    {/if}
+    <div class="stats stats-vertical shadow">
+        {#if cache}
+            <div class="stat">
+                <div class="stat-title">Cache Size</div>
+                <div class="stat-value">{byteString(cache.size)}</div>
+            </div>
+        {/if}
 
-    {#if requests}
-        <p>
-            Request Count: {average.count}
-        </p>
-        <p>
-            Average Response Time: {(average.average / 1000000).toFixed(3)} ms
-        </p>
-    {/if}
+        {#if requests}
+            <div class="stat">
+                <div class="stat-title">Request Count</div>
+                <div class="stat-value">{average.count}</div>
+            </div>
+
+            <div class="stat">
+                <div class="stat-title">Average Response Time</div>
+                <div class="stat-value">{(average.average / 1000000).toFixed(3)} ms</div>
+            </div>
+        {/if}
+    </div>
 
     <div class="grid grid-cols-2">
         <Chart
