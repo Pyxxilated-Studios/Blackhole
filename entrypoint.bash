@@ -8,14 +8,15 @@ function client() {
     node index.js
 }
 
-case "$1" in
+command=$1
+shift
+
+case "${command}" in
     start)
         client &
         server ${@}
         ;;
     *)
-        command=$1
-        shift
         exec "${command} ${@}"
         ;;
 esac

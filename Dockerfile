@@ -39,7 +39,7 @@ RUN cargo build --release
 
 FROM node:buster-slim
 
-RUN apt update && apt install -y dnsutils
+RUN apt update && apt install -y dnsutils ca-certificates
 
 WORKDIR /blackhole
 
