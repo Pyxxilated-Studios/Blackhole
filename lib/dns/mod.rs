@@ -10,6 +10,7 @@ use core::{
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use bstr::BString;
 use serde::Serialize;
 use thiserror::Error;
 use tracing::warn;
@@ -368,7 +369,7 @@ pub enum Record {
 }
 
 impl Record {
-    pub fn domain(&self) -> Option<&String> {
+    pub fn domain(&self) -> Option<&BString> {
         match self {
             Record::UNKNOWN { record, .. }
             | Record::A { record, .. }

@@ -1,10 +1,10 @@
 use core::mem::size_of;
-use std::{
-    collections::HashMap,
-    sync::{Arc, LazyLock},
-};
+use std::hash::BuildHasherDefault;
+use std::sync::{Arc, LazyLock};
 
+use bstr::BString;
 use chrono::{DateTime, Duration, Utc};
+use rustc_hash::FxHashMap;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -16,10 +16,19 @@ use crate::{
 };
 
 type PacketExpires = (Packet, Vec<DateTime<Utc>>);
+type Entry = FxHashMap<QueryType, PacketExpires>;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Cache {
-    cache: HashMap<String, HashMap<QueryType, PacketExpires>>,
+    cache: FxHashMap<BString, Entry>,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self {
+            cache: FxHashMap::with_capacity_and_hasher(1024, BuildHasherDefault::default()),
+        }
+    }
 }
 
 static CACHE: LazyLock<Arc<RwLock<Cache>>> = LazyLock::new(Arc::default);
@@ -75,29 +84,29 @@ impl Cache {
         let mut cache = CACHE.write().await;
 
         let key = packet.questions[0].name.name().clone();
+        let sub_key = packet.questions[0].qtype;
 
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
             misses: 1,
-            size: key.capacity() + size_of::<HashMap<QueryType, PacketExpires>>() + DNS_PACKET_SIZE,
+            size: key.capacity() + size_of::<Entry>() + DNS_PACKET_SIZE,
         }))
         .await;
+
+        let value = packet
+            .answers
+            .iter()
+            .map(|answer| {
+                Utc::now()
+                    + Duration::seconds(i64::from(u32::from(answer.ttl().unwrap_or_default())))
+            })
+            .collect();
 
         *cache
             .cache
             .entry(key)
             .or_default()
-            .entry(packet.questions[0].qtype)
-            .or_default() = (
-            packet.clone(),
-            packet
-                .answers
-                .iter()
-                .map(|answer| {
-                    Utc::now()
-                        + Duration::seconds(i64::from(u32::from(answer.ttl().unwrap_or_default())))
-                })
-                .collect(),
-        );
+            .entry(sub_key)
+            .or_default() = (packet, value);
     }
 }

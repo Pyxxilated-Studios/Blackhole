@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     io::BufRead,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -8,8 +8,10 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use bstr::{BString, ByteSlice};
 use chumsky::{prelude::*, text::newline};
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -19,8 +21,6 @@ use crate::{
     config::{self, FilterList},
     dns,
 };
-
-pub type Span = std::ops::Range<usize>;
 
 static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
@@ -62,13 +62,13 @@ pub struct Rule {
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct Rules {
-    pub(crate) children: HashMap<String, Rules>,
+    pub(crate) children: FxHashMap<BString, Rules>,
     pub(crate) rule: Option<Rule>,
 }
 
 #[derive(Default, Debug)]
 pub struct Filter {
-    pub(crate) lists: HashSet<FilterList>,
+    pub(crate) lists: FxHashSet<FilterList>,
     pub(crate) rules: Rules,
 }
 
@@ -139,13 +139,15 @@ impl Filter {
             .labelled("Comment")
             .padded();
 
-        let part = one_of(DOMAIN_CHARS).repeated().at_least(1);
-        let domain = part.clone().separated_by(just('.')).at_least(1).map(|v| {
-            v.iter()
-                .map(|a| a.iter().collect::<String>())
-                .collect::<Vec<_>>()
-                .join(".")
-        });
+        let part = one_of(DOMAIN_CHARS)
+            .repeated()
+            .at_least(1)
+            .collect::<String>();
+        let domain = part
+            .clone()
+            .separated_by(just('.'))
+            .at_least(1)
+            .map(|a| a.join("."));
 
         let domain = just('.')
             .or_not()
@@ -241,25 +243,31 @@ impl Filter {
             .lines()
             .filter_map(Result::ok)
             .par_bridge()
-            .try_fold(Vec::default, |mut entries, line| {
-                let (l, errors) = Self::lex().parse_recovery(line);
+            .try_fold(
+                || Vec::with_capacity(1024),
+                |mut entries, line| {
+                    let (l, errors) = Self::lex().parse_recovery(line);
 
-                if errors.is_empty() {
-                    if let Some(ents) = l {
-                        entries.extend(ents);
+                    if errors.is_empty() {
+                        if let Some(ents) = l {
+                            entries.extend(ents);
+                        }
+                        Ok(entries)
+                    } else {
+                        Err(Error::FilterError(String::from("Invalid filter list")))
                     }
+                },
+            )
+            .try_reduce(
+                || Vec::with_capacity(1024),
+                |mut entries, ents| {
+                    entries.extend(ents);
                     Ok(entries)
-                } else {
-                    Err(Error::FilterError(String::from("Invalid filter list")))
-                }
-            })
-            .try_reduce(Vec::default, |mut entries, ents| {
-                entries.extend(ents);
-                Ok(entries)
-            })
+                },
+            )
     }
 
-    fn insert(&mut self, entry: Type) {
+    fn add(&mut self, entry: Type) {
         let (addr, ty, domain) = match entry {
             Type::Host(ip, domain) => (Some(ip), Kind::Deny, domain),
             Type::Domain(domain) => (None, Kind::Deny, domain),
@@ -274,7 +282,7 @@ impl Filter {
             .split('.')
             .rev()
             .fold(&mut self.rules, |current_node, part| {
-                current_node.children.entry(part.to_string()).or_default()
+                current_node.children.entry(part.into()).or_default()
             });
 
         let mut rule = node.rule.clone().unwrap_or(Rule {
@@ -332,6 +340,13 @@ impl Filter {
         node.rule = Some(rule);
     }
 
+    #[inline]
+    pub fn insert(&mut self, entries: Vec<Type>) {
+        for entry in entries {
+            self.add(entry);
+        }
+    }
+
     ///
     /// Load a list into the filter
     ///
@@ -351,11 +366,7 @@ impl Filter {
         list.entries = entries.len();
 
         let mut filter = FILTER.write().await;
-
-        for entry in entries {
-            filter.insert(entry);
-        }
-
+        filter.insert(entries);
         filter.lists.insert(list);
 
         Ok(())
@@ -382,33 +393,92 @@ impl Filter {
         Ok(())
     }
 
+    pub fn filter(&self, packet: &dns::packet::Packet) -> Option<Rule> {
+        packet.questions[0]
+            .name
+            .name()
+            .split(|&c| c == b'.')
+            .rev()
+            .try_fold(&self.rules, |current_node, entry| {
+                match current_node.children.get(entry.as_bstr()) {
+                    Some(entry) => Ok(entry),
+                    None => Err(current_node),
+                }
+            })
+            .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
+    }
+
     pub fn check(packet: &dns::packet::Packet) -> Option<Rule> {
         FILTER
             .try_read()
-            .map(|filter| {
-                packet.questions[0]
-                    .name
-                    .name()
-                    .split('.')
-                    .rev()
-                    .try_fold(&filter.rules, |current_node, entry| {
-                        match current_node.children.get(entry) {
-                            Some(entry) => Ok(entry),
-                            None => Err(current_node),
-                        }
-                    })
-                    .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
-            })
+            .map(|filter| filter.filter(packet))
             .unwrap_or_default()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Filter, Kind, Rule, Rules};
+    use std::{
+        net::{IpAddr, Ipv4Addr, Ipv6Addr},
+        path::Path,
+    };
+
+    use crate::dns::{
+        header::Header, packet::Packet, qualified_name::QualifiedName, question::Question,
+        QueryType, ResultCode,
+    };
+
+    use super::Filter;
 
     #[test]
     fn parsing() {
-        let mut _filter = Filter::default();
+        let mut filter = Filter::default();
+
+        let packet = Packet {
+            header: Header {
+                id: 0,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: ResultCode::NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 0,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("localhost".into()),
+                qtype: QueryType::A,
+            }],
+            answers: vec![],
+            authorities: vec![],
+            resources: vec![],
+        };
+
+        let entries = Filter::parse(Path::new("benches/test.txt"));
+        assert!(entries.is_ok());
+
+        let entries = entries.unwrap();
+        assert_eq!(entries.len(), 81560);
+        filter.insert(entries);
+
+        let rule = filter.filter(&packet);
+        assert!(rule.is_some());
+
+        let rule = rule.unwrap();
+        assert!(rule.action.is_some());
+
+        let action = rule.action.unwrap();
+        assert!(action.rewrite.is_some());
+
+        let rewrite = action.rewrite.unwrap();
+        assert_eq!(rewrite.v4, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(rewrite.v6, IpAddr::V6(Ipv6Addr::LOCALHOST));
     }
 }

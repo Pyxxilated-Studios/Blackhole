@@ -148,9 +148,9 @@ where
             packet.header.response = true;
             packet.header.answers = 0;
             packet.header.truncated_message = false;
-            packet.answers = vec![];
-            packet.authorities = vec![];
-            packet.resources = vec![];
+            packet.answers = Vec::default();
+            packet.authorities = Vec::default();
+            packet.resources = Vec::default();
 
             I::try_from(packet.clone())
         })?;
@@ -180,9 +180,9 @@ where
         packet.header.response = true;
         packet.header.answers = 0;
         packet.header.truncated_message = false;
-        packet.answers = vec![];
-        packet.authorities = vec![];
-        packet.resources = vec![];
+        packet.answers = Vec::default();
+        packet.authorities = Vec::default();
+        packet.resources = Vec::default();
 
         self.status = packet.header.rescode;
 
@@ -222,14 +222,14 @@ where
         forwarder.set_tos(0xFE)?;
 
         tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(5),
             forwarder.send_to(buffer.get_range(0, buffer.pos())?, (server.ip, server.port)),
         )
         .await??;
 
         let mut res_buffer = Buffer::default();
         tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(5),
             forwarder.recv_from(res_buffer.buffer_mut()),
         )
         .await??;
@@ -307,8 +307,8 @@ where
                     }
                     _ => {}
                 }
-                packet.authorities = vec![];
-                packet.resources = vec![];
+                packet.authorities = Vec::default();
+                packet.resources = Vec::default();
 
                 Ok(packet)
             }
@@ -325,6 +325,7 @@ where
         };
 
         let id = packet.header.id;
+        let mut timed_out = false;
 
         let start = Instant::now();
 
@@ -350,7 +351,11 @@ where
                     }
                 }
                 Err(err) => {
-                    error!("{err:?}");
+                    if let DNSError::Timeout(_) = err {
+                        timed_out = true;
+                    } else {
+                        error!("{err:?}");
+                    }
                     handler.respond_error(&socket, address, id).await;
                 }
             }
@@ -358,11 +363,14 @@ where
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        Statistics::record(Statistic::Average(Average {
-            count: 1,
-            average: handler.elapsed,
-        }))
-        .await;
+        if !timed_out {
+            Statistics::record(Statistic::Average(Average {
+                count: 1,
+                average: handler.elapsed,
+            }))
+            .await;
+        }
+
         Statistics::record(Statistic::Request(handler.into())).await;
     }
 }
