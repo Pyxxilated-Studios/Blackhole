@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    hash::BuildHasherDefault,
     sync::{Arc, LazyLock},
 };
 
 use chrono::{DateTime, Utc};
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
@@ -20,7 +21,7 @@ pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
 
 impl Statistic {
-    fn record(self, stats: &mut HashMap<&'static str, Statistic>) {
+    fn record(self, stats: &mut FxHashMap<&'static str, Statistic>) {
         match self {
             Statistic::Cache(cache) => match stats
                 .entry(CACHE)
@@ -58,14 +59,14 @@ impl Statistic {
             }
             Statistic::Request(request) => match stats
                 .entry(REQUEST)
-                .or_insert(Statistic::Requests(Vec::new()))
+                .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => r.push(request),
                 _ => unreachable!(),
             },
             Statistic::Requests(requests) => match stats
                 .entry(REQUEST)
-                .or_insert(Statistic::Requests(Vec::new()))
+                .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => r.extend(requests.into_iter()),
                 _ => unreachable!(),
@@ -108,9 +109,16 @@ pub enum Statistic {
     Cache(Cache),
 }
 
-#[derive(Default)]
 pub struct Statistics {
-    statistics: HashMap<&'static str, Statistic>,
+    statistics: FxHashMap<&'static str, Statistic>,
+}
+
+impl Default for Statistics {
+    fn default() -> Self {
+        Statistics {
+            statistics: FxHashMap::with_capacity_and_hasher(1024, BuildHasherDefault::default()),
+        }
+    }
 }
 
 impl Statistics {
@@ -151,7 +159,7 @@ impl Statistics {
     }
 
     #[inline]
-    pub async fn statistics() -> HashMap<&'static str, Statistic> {
+    pub async fn statistics() -> FxHashMap<&'static str, Statistic> {
         let statistics = STATISTICS.read().await;
         statistics.statistics.clone()
     }

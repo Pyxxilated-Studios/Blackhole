@@ -1,3 +1,4 @@
+use bstr::{BString, ByteSlice, ByteVec};
 use serde::Serialize;
 
 use crate::dns::{
@@ -7,13 +8,22 @@ use crate::dns::{
 
 use super::traits::FromBuffer;
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
-pub struct QualifiedName(pub String);
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct QualifiedName(pub BString);
 
 impl QualifiedName {
     #[inline]
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> BString {
         self.0.clone()
+    }
+}
+
+impl Serialize for QualifiedName {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.0.to_str().unwrap())
     }
 }
 
@@ -23,7 +33,7 @@ impl<'a, T: IO> WriteTo<'a, T> for &QualifiedName {
             out.write(0u8)
         } else {
             self.name()
-                .split('.')
+                .split(|&c| c == b'.')
                 .try_fold(out, |buffer, label| {
                     let len = label.len();
                     if len > 0x3f {
@@ -37,7 +47,7 @@ impl<'a, T: IO> WriteTo<'a, T> for &QualifiedName {
     }
 }
 
-impl<'a> From<&'a QualifiedName> for &'a str {
+impl<'a> From<&'a QualifiedName> for &'a BString {
     #[inline]
     fn from(qn: &'a QualifiedName) -> Self {
         &qn.0
@@ -53,11 +63,17 @@ impl<I: IO> FromBuffer<I> for QualifiedName {
     fn from_buffer(buffer: &mut I) -> Result<Self> {
         let mut pos = buffer.pos();
         let mut jumped = false;
-        let mut outstr = String::new();
+        let mut outstr = BString::new(Vec::with_capacity(128));
 
-        let mut delim = "";
         loop {
             let len = buffer.get(pos)?;
+
+            pos += 1;
+
+            // Names are terminated by an empty label of length 0
+            if len == 0 {
+                break;
+            }
 
             // A two byte sequence, where the two highest bits of the first byte is
             // set, represents an offset relative to the start of the buffer. We
@@ -67,31 +83,22 @@ impl<I: IO> FromBuffer<I> for QualifiedName {
                 // When a jump is performed, we only modify the shared buffer
                 // position once, and avoid making the change later on.
                 if !jumped {
-                    buffer.seek(pos + 2)?;
+                    buffer.seek(pos + 1)?;
                 }
 
-                let b2 = u16::from(buffer.get(pos + 1)?);
+                let b2 = u16::from(buffer.get(pos)?);
                 let offset = ((u16::from(len) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
                 jumped = true;
-                continue;
+            } else {
+                if outstr.len() > 0 {
+                    outstr.push_char('.');
+                }
+
+                outstr.push_str(buffer.get_range(pos, len as usize)?);
+
+                pos += len as usize;
             }
-
-            pos += 1;
-
-            // Names are terminated by an empty label of length 0
-            if len == 0 {
-                break;
-            }
-
-            outstr.push_str(delim);
-
-            let str_buffer = buffer.get_range(pos, len as usize)?;
-            outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
-
-            delim = ".";
-
-            pos += len as usize;
         }
 
         if !jumped {

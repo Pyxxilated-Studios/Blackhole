@@ -26,7 +26,7 @@ pub struct ResizableBuffer {
 impl Default for ResizableBuffer {
     fn default() -> Self {
         Self {
-            buffer: vec![0; DNS_PACKET_SIZE],
+            buffer: Vec::with_capacity(DNS_PACKET_SIZE * 2),
             pos: Default::default(),
         }
     }
@@ -324,31 +324,31 @@ mod test {
                 resource_entries: 0,
             },
             questions: vec![Question {
-                name: QualifiedName("example.com".to_owned()),
+                name: QualifiedName("example.com".into()),
                 qtype: QueryType::MX,
             }],
             answers: vec![
                 Record::MX {
                     record: RR {
-                        domain: QualifiedName("example.com".to_owned()),
+                        domain: QualifiedName("example.com".into()),
                         ttl: Ttl(3600),
                         query_type: QueryType::MX,
                         class: 1,
                         data_length: 20,
                     },
                     priority: 10,
-                    host: QualifiedName("mail.example.com".to_owned()),
+                    host: QualifiedName("mail.example.com".into()),
                 },
                 Record::MX {
                     record: RR {
-                        domain: QualifiedName("example.com".to_owned()),
+                        domain: QualifiedName("example.com".into()),
                         ttl: Ttl(3600),
                         query_type: QueryType::MX,
                         class: 1,
                         data_length: 23,
                     },
                     priority: 20,
-                    host: QualifiedName("mailsec.example.com".to_owned()),
+                    host: QualifiedName("mailsec.example.com".into()),
                 },
             ],
             authorities: vec![],
