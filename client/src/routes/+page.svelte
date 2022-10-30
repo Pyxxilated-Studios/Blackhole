@@ -6,6 +6,7 @@
     type Data = { labels: string[]; datasets: { values: number[] }[] };
 
     const MAX_TIME_SERIES = 20;
+    const TIME_SERIES = 1000 * 60 * 60;
 
     let cache: Cache;
     let average: Average;
@@ -30,15 +31,25 @@
         ],
     };
 
+    let blockedRequestCount = 0;
+    let blockedRequests: Data = {
+        labels: [],
+        datasets: [
+            {
+                values: [],
+            },
+        ],
+    };
+
     const byteString = (bytes: number): string => {
         if (bytes < 1000) {
             return `${bytes} B`;
         } else if (bytes < 1000000) {
-            return `${bytes / 1000} KB`;
+            return `${(bytes / 1000).toFixed(3)} KB`;
         } else if (bytes < 1000000000) {
-            return `${bytes / 1000000} MB`;
+            return `${(bytes / 1000000).toFixed(3)} MB`;
         } else {
-            return `${bytes / 1000000000} GB`;
+            return `${(bytes / 1000000000).toFixed(3)} GB`;
         }
     };
 
@@ -71,7 +82,10 @@
                 requests = (await requestsResponse.json()).Requests;
 
                 let data: Record<string, number> = {};
-                let time_series: Record<string, number> = {};
+                let timeSeries: Record<string, number> = {};
+                let blockedTimeSeries: Record<string, number> = {};
+
+                blockedRequestCount = 0;
 
                 requests.forEach((request) => {
                     if (request.question.qtype in data) {
@@ -80,13 +94,24 @@
                         data[request.question.qtype] = 1;
                     }
 
-                    let minute = new Date(
-                        ~~(new Date(request.timestamp).getTime() / 1000 / 60) * 60000
+                    let time = new Date(
+                        ~~(new Date(request.timestamp).getTime() / TIME_SERIES) * TIME_SERIES
                     ).toLocaleString();
-                    if (minute in time_series) {
-                        time_series[minute]++;
+
+                    if (request.rule?.ty === "Deny") {
+                        blockedRequestCount++;
+
+                        if (time in timeSeries) {
+                            blockedTimeSeries[time]++;
+                        } else {
+                            blockedTimeSeries[time] = 1;
+                        }
+                    }
+
+                    if (time in timeSeries) {
+                        timeSeries[time]++;
                     } else {
-                        time_series[minute] = 1;
+                        timeSeries[time] = 1;
                     }
                 });
 
@@ -96,17 +121,30 @@
                     queryTypes.datasets[0].values[idx] = data[label];
                 });
 
-                requestsTimeSeries.labels = Array.from(Object.keys(time_series));
-                requestsTimeSeries.labels.sort((a, b) => a.localeCompare(b));
+                requestsTimeSeries.labels = Array.from(Object.keys(timeSeries));
+                requestsTimeSeries.labels.sort(
+                    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+                );
                 requestsTimeSeries.datasets[0].values.length = requestsTimeSeries.labels.length;
                 requestsTimeSeries.labels.forEach((label, idx) => {
-                    requestsTimeSeries.datasets[0].values[idx] = time_series[label];
+                    requestsTimeSeries.datasets[0].values[idx] = timeSeries[label];
                 });
 
                 if (requestsTimeSeries.labels.length > MAX_TIME_SERIES) {
-                    requestsTimeSeries.labels = requestsTimeSeries.labels.slice(
-                        requestsTimeSeries.labels.length - MAX_TIME_SERIES
-                    );
+                    requestsTimeSeries.labels = requestsTimeSeries.labels.slice(-MAX_TIME_SERIES);
+                }
+
+                blockedRequests.labels = Array.from(Object.keys(blockedTimeSeries));
+                blockedRequests.labels.sort(
+                    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+                );
+                blockedRequests.datasets[0].values.length = blockedRequests.labels.length;
+                blockedRequests.labels.forEach((label, idx) => {
+                    blockedRequests.datasets[0].values[idx] = blockedTimeSeries[label];
+                });
+
+                if (blockedRequests.labels.length > MAX_TIME_SERIES) {
+                    blockedRequests.labels = blockedRequests.labels.slice(-MAX_TIME_SERIES);
                 }
             } else {
                 error = requestsResponse.statusText;
@@ -132,7 +170,7 @@
         <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
     </div>
 
-    <div class="stats stats-vertical shadow">
+    <div class="stats stats-vertical lg:stats-horizontal w-full">
         {#if cache}
             <div class="stat">
                 <div class="stat-title">Cache Size</div>
@@ -140,12 +178,7 @@
             </div>
         {/if}
 
-        {#if requests}
-            <div class="stat">
-                <div class="stat-title">Request Count</div>
-                <div class="stat-value">{average.count}</div>
-            </div>
-
+        {#if average}
             <div class="stat">
                 <div class="stat-title">Average Response Time</div>
                 <div class="stat-value">{(average.average / 1000000).toFixed(3)} ms</div>
@@ -153,29 +186,50 @@
         {/if}
     </div>
 
-    <div class="grid grid-cols-2">
-        <Chart
-            data={{
-                labels: ["Hits", "Misses"],
-                datasets: [
-                    {
-                        values: [cache?.hits ?? 0, cache?.misses ?? 0],
-                    },
-                ],
-            }}
-            title="Cache Effictiveness"
-            type="pie"
-        />
+    <div class="stats stats-vertical lg:stats-horizontal gap-1 w-full">
+        {#if requests}
+            <div class="stat">
+                <div class="stat-title">Request Count</div>
+                <div class="stat-value">{average.count}</div>
+                <div class="stat-desc">
+                    <Chart
+                        data={requestsTimeSeries}
+                        title="Requests per Hour"
+                        type="line"
+                        lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+                    />
+                </div>
+            </div>
 
-        <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
+            <div class="stat">
+                <div class="stat-title">Blocked Requests</div>
+                <div class="stat-value">{blockedRequestCount}</div>
+                <div class="stat-desc">
+                    <Chart
+                        data={blockedRequests}
+                        title="Blocked Requests per Hour"
+                        type="line"
+                        lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+                    />
+                </div>
+            </div>
+        {/if}
     </div>
 
     <Chart
-        data={requestsTimeSeries}
-        title="Requests per Minute"
-        type="line"
-        lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+        data={{
+            labels: ["Hits", "Misses"],
+            datasets: [
+                {
+                    values: [cache?.hits ?? 0, cache?.misses ?? 0],
+                },
+            ],
+        }}
+        title="Cache Effictiveness"
+        type="pie"
     />
+
+    <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
 {:else}
     <p>Loading ...</p>
 {/if}
