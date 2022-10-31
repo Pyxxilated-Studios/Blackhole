@@ -88,11 +88,7 @@
                 blockedRequestCount = 0;
 
                 requests.forEach((request) => {
-                    if (request.question.qtype in data) {
-                        data[request.question.qtype]++;
-                    } else {
-                        data[request.question.qtype] = 1;
-                    }
+                    data[request.question.qtype] = (data[request.question.qtype] ?? 0) + 1;
 
                     let time = new Date(
                         ~~(new Date(request.timestamp).getTime() / TIME_SERIES) * TIME_SERIES
@@ -100,19 +96,10 @@
 
                     if (request.rule?.ty === "Deny") {
                         blockedRequestCount++;
-
-                        if (time in timeSeries) {
-                            blockedTimeSeries[time]++;
-                        } else {
-                            blockedTimeSeries[time] = 1;
-                        }
+                        blockedTimeSeries[time] = (blockedTimeSeries[time] ?? 0) + 1;
                     }
 
-                    if (time in timeSeries) {
-                        timeSeries[time]++;
-                    } else {
-                        timeSeries[time] = 1;
-                    }
+                    timeSeries[time] = (timeSeries[time] ?? 0) + 1;
                 });
 
                 queryTypes.labels = Array.from(Object.keys(data));
@@ -187,33 +174,36 @@
     </div>
 
     <div class="stats stats-vertical lg:stats-horizontal gap-1 w-full">
-        {#if requests}
-            <div class="stat">
-                <div class="stat-title">Request Count</div>
-                <div class="stat-value">{average.count}</div>
-                <div class="stat-desc">
-                    <Chart
-                        data={requestsTimeSeries}
-                        title="Requests per Hour"
-                        type="line"
-                        lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
-                    />
-                </div>
+        <div class="stat">
+            <div class="stat-title">Request Count</div>
+            <div class="stat-value">{average?.count}</div>
+            <div class="stat-desc">
+                <Chart
+                    data={requestsTimeSeries}
+                    title="Requests per Hour"
+                    type="line"
+                    lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+                />
             </div>
+        </div>
 
-            <div class="stat">
-                <div class="stat-title">Blocked Requests</div>
-                <div class="stat-value">{blockedRequestCount}</div>
-                <div class="stat-desc">
-                    <Chart
-                        data={blockedRequests}
-                        title="Blocked Requests per Hour"
-                        type="line"
-                        lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
-                    />
-                </div>
+        <div class="stat">
+            <div class="stat-title">Blocked Requests</div>
+            <div class="stat-value">
+                {blockedRequestCount} ({(
+                    (blockedRequestCount / (requests?.length ?? 1)) *
+                    100
+                ).toFixed(2)}%)
             </div>
-        {/if}
+            <div class="stat-desc">
+                <Chart
+                    data={blockedRequests}
+                    title="Blocked Requests per Hour"
+                    type="line"
+                    lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+                />
+            </div>
+        </div>
     </div>
 
     <Chart

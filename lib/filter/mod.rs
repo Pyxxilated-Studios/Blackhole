@@ -1,7 +1,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    io::BufRead,
+    io::{BufRead, BufReader},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     str::FromStr,
@@ -9,7 +9,16 @@ use std::{
 };
 
 use bstr::{BString, ByteSlice};
-use chumsky::{prelude::*, text::newline};
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_while, take_while1},
+    character::complete::{line_ending, not_line_ending, one_of, space0, space1},
+    combinator::{eof, map, opt, peek},
+    error::{context, ContextError, ParseError, VerboseError},
+    multi::{count, many_m_n, many_till, separated_list1},
+    sequence::{terminated, tuple},
+    AsChar, IResult,
+};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -88,6 +97,173 @@ fn file_name_for(list: &FilterList) -> String {
     format!("{}.txt", hasher.finish())
 }
 
+fn ip4_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, String, E> {
+    context(
+        "IP4_Num",
+        alt((
+            map(
+                tuple((tag("1"), one_of("0123456789"), one_of("0123456789"))),
+                |(a, b, c)| format!("{a}{b}{c}"),
+            ),
+            map(
+                tuple((
+                    tag("2"),
+                    alt((
+                        map(tuple((tag("5"), one_of("012345"))), |(a, b)| {
+                            format!("{a}{b}")
+                        }),
+                        map(tuple((one_of("01234"), one_of("0123456789"))), |(a, b)| {
+                            format!("{a}{b}")
+                        }),
+                    )),
+                )),
+                |(_, b)| format!("2{b}"),
+            ),
+            map(
+                tuple((one_of("123456789"), one_of("0123456789"))),
+                |(a, b)| format!("{a}{b}"),
+            ),
+            map(one_of("0123456789"), |a| format!("{a}")),
+        )),
+    )(i)
+}
+
+fn ipv4<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, IpAddr, E> {
+    context(
+        "IPV4",
+        map(
+            tuple((count(terminated(ip4_num, tag(".")), 3), ip4_num)),
+            |(a, b)| IpAddr::from_str(&format!("{}.{b}", a.join("."))).unwrap(),
+        ),
+    )(i)
+}
+
+fn ip6_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, String, E> {
+    context(
+        "IP6_Num",
+        map(many_m_n(1, 4, one_of("0123456789abcdefABCDEF")), |v| {
+            v.iter().collect()
+        }),
+    )(i)
+}
+
+fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, IpAddr, E> {
+    context(
+        "IPV6",
+        map(
+            tuple((
+                alt((
+                    map(tuple((opt(ip6_num), tag("::"))), |(a, b)| {
+                        format!("{}{b}", a.unwrap_or_default())
+                    }),
+                    map(count(terminated(ip6_num, tag(":")), 7), |parts| {
+                        parts.join(":")
+                    }),
+                )),
+                ip6_num,
+                opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
+            )),
+            |(a, b, _)| IpAddr::from_str(&format!("{a}{b}")).unwrap(),
+        ),
+    )(i)
+}
+
+fn ip<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, IpAddr, E> {
+    context(
+        "IP",
+        map(
+            tuple((
+                alt((ipv4, ipv6)),
+                peek(alt((space1, map(eol, |_| ""), eof))),
+            )),
+            |(ip, _)| ip,
+        ),
+    )(i)
+}
+
+fn domain<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, String, E> {
+    context(
+        "Domain",
+        map(
+            separated_list1(
+                tag("."),
+                take_while1(|c| DOMAIN_CHARS.chars().any(|a| a == c)),
+            ),
+            |parts| parts.join("."),
+        ),
+    )(i)
+}
+
+fn hosts<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, Type, E> {
+    context(
+        "Hosts",
+        map(tuple((ip, space1, domain)), |(ip, _, domain)| {
+            Type::Host(ip, domain)
+        }),
+    )(i)
+}
+
+fn adblock<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, Type, E> {
+    context(
+        "Adblock",
+        map(
+            tuple((
+                alt((tag("||@@"), tag("@@||"), tag("||"))),
+                alt((map(ip, Type::Ip), map(domain, Type::Domain))),
+            )),
+            |(pre, ty)| {
+                Type::Adblock(
+                    if pre.chars().any(|c| c == '@') {
+                        Kind::Allow
+                    } else {
+                        Kind::Deny
+                    },
+                    Box::new(ty),
+                )
+            },
+        ),
+    )(i)
+}
+
+fn comment<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, &'a str, E> {
+    context(
+        "Comment",
+        map(tuple((one_of("#!"), not_line_ending)), |(_, comment)| {
+            comment
+        }),
+    )(i)
+}
+
+fn eol<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, (), E> {
+    context(
+        "EOL",
+        map(
+            tuple((space0, opt(comment), alt((eof, line_ending)))),
+            |(_, _, _)| (),
+        ),
+    )(i)
+}
+
 impl Filter {
     #[instrument(level = "info")]
     pub async fn update() {
@@ -133,100 +309,28 @@ impl Filter {
         Self::import(filter).await
     }
 
-    fn lex() -> impl Parser<char, Vec<Type>, Error = Simple<char>> {
-        let comment = one_of("#!")
-            .then(take_until(newline().or(end())))
-            .labelled("Comment")
-            .padded();
-
-        let part = one_of(DOMAIN_CHARS)
-            .repeated()
-            .at_least(1)
-            .collect::<String>();
-        let domain = part
-            .clone()
-            .separated_by(just('.'))
-            .at_least(1)
-            .map(|a| a.join("."));
-
-        let domain = just('.')
-            .or_not()
-            .then(domain)
-            .then(just('.').or_not())
-            .labelled("Domain")
-            .map(|((a, b), c)| {
-                format!(
-                    "{}{b}{}",
-                    if a.is_some() { "." } else { "" },
-                    if c.is_some() { "." } else { "" }
-                )
-            });
-
-        let ip6_abbreviate = just("::").then(text::int::<_, Simple<char>>(16));
-        let ipv6_ = text::int::<_, Simple<char>>(16)
-            .then(just("::"))
-            .then(text::int(16));
-        let ipv6__ = text::int::<_, Simple<char>>(16)
-            .separated_by(just(":").ignored())
-            .at_most(8)
-            .at_least(2)
-            .then(text::int(16));
-
-        let ipv6 = ip6_abbreviate
-            .map(|(a, b)| String::from(a) + &b)
-            .or(ipv6_.map(|((a, b), c)| a + b + &c))
-            .or(ipv6__.map(|(a, b)| a.join(":") + &b))
-            .then_ignore(just("%").then(part).or_not());
-
-        let ipv4 = text::int::<_, Simple<char>>(10)
-            .separated_by(just('.').ignored())
-            .exactly(4)
-            .labelled("IP")
-            .map(|ip| ip.join("."));
-
-        let ip = ipv6
-            .or(ipv4)
-            .then_ignore(filter::<char, _, _>(text::Character::is_whitespace))
-            .map(|ip| IpAddr::from_str(&ip).unwrap());
-
-        let hosts = ip
-            .clone()
-            .then(domain.clone())
-            .labelled("Hosts Syntax")
-            .map(|(a, b)| Type::Host(a, b));
-
-        let adblock_ = ip
-            .clone()
-            .map(Type::Ip)
-            .or(domain.clone().map(Type::Domain));
-
-        let adblock = just("@@||")
-            .or(just("||@@"))
-            .or(just("||"))
-            .then(adblock_)
-            .labelled("AdBlock Syntax")
-            .map(|(kind, ty)| {
-                Type::Adblock(
-                    if kind.chars().any(|c| c == '@') {
-                        Kind::Deny
-                    } else {
-                        Kind::Allow
-                    },
-                    Box::new(ty),
-                )
-            });
-
-        let filter = hosts
-            .or(ip.map(Type::Ip))
-            .or(domain.map(Type::Domain))
-            .or(adblock)
-            .recover_with(skip_then_retry_until([]).consume_end());
-
-        filter
-            .padded_by(comment.repeated())
-            .padded_by(text::whitespace().or(text::newline()))
-            .padded()
-            .repeated()
+    fn lex<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
+        i: &'a str,
+    ) -> IResult<&'a str, impl Iterator<Item = Option<Type>> + 'a, E> {
+        context(
+            "Lex",
+            map(
+                many_till(
+                    tuple((
+                        space0,
+                        opt(alt((
+                            hosts,
+                            map(ip, Type::Ip),
+                            map(domain, Type::Domain),
+                            adblock,
+                        ))),
+                        eol,
+                    )),
+                    eof,
+                ),
+                |(a, _)| a.into_iter().map(|(_, b, _)| b),
+            ),
+        )(i)
     }
 
     ///
@@ -237,7 +341,7 @@ impl Filter {
     ///
     pub fn parse(file: &Path) -> Result<Vec<Type>, Error> {
         let file = std::fs::File::open(file)?;
-        let reader = std::io::BufReader::new(file);
+        let reader = BufReader::new(file);
 
         reader
             .lines()
@@ -245,23 +349,18 @@ impl Filter {
             .par_bridge()
             .try_fold(
                 || Vec::with_capacity(1024),
-                |mut entries, line| {
-                    let (l, errors) = Self::lex().parse_recovery(line);
-
-                    if errors.is_empty() {
-                        if let Some(ents) = l {
-                            entries.extend(ents);
-                        }
+                |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
+                    Err(_) => Err(Error::FilterError(String::from("Invalid filter list"))),
+                    Ok((_, ents)) => {
+                        entries.extend(ents.flatten());
                         Ok(entries)
-                    } else {
-                        Err(Error::FilterError(String::from("Invalid filter list")))
                     }
                 },
             )
             .try_reduce(
                 || Vec::with_capacity(1024),
-                |mut entries, ents| {
-                    entries.extend(ents);
+                |mut entries, entry| {
+                    entries.extend(entry);
                     Ok(entries)
                 },
             )
@@ -341,10 +440,11 @@ impl Filter {
     }
 
     #[inline]
-    pub fn insert(&mut self, entries: Vec<Type>) {
-        for entry in entries {
+    pub fn insert(&mut self, entries: Vec<Type>) -> usize {
+        entries.into_iter().fold(0, |acc, entry| {
             self.add(entry);
-        }
+            acc + 1
+        })
     }
 
     ///
@@ -361,12 +461,9 @@ impl Filter {
 
         let entries = Self::parse(Path::new(&file))?;
 
-        info!("Loaded {} filter(s) for {}", entries.len(), list.name);
-
-        list.entries = entries.len();
-
         let mut filter = FILTER.write().await;
-        filter.insert(entries);
+        list.entries = filter.insert(entries);
+        info!("Loaded {} filter(s) for {}", list.entries, list.name);
         filter.lists.insert(list);
 
         Ok(())
@@ -418,14 +515,14 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        net::{IpAddr, Ipv4Addr, Ipv6Addr},
-        path::Path,
-    };
+    use std::path::Path;
 
-    use crate::dns::{
-        header::Header, packet::Packet, qualified_name::QualifiedName, question::Question,
-        QueryType, ResultCode,
+    use crate::{
+        dns::{
+            header::Header, packet::Packet, qualified_name::QualifiedName, question::Question,
+            QueryType, ResultCode,
+        },
+        filter::Kind,
     };
 
     use super::Filter;
@@ -453,7 +550,7 @@ mod tests {
                 resource_entries: 0,
             },
             questions: vec![Question {
-                name: QualifiedName("localhost".into()),
+                name: QualifiedName("zz3r0.com".into()),
                 qtype: QueryType::A,
             }],
             answers: vec![],
@@ -465,20 +562,12 @@ mod tests {
         assert!(entries.is_ok());
 
         let entries = entries.unwrap();
-        assert_eq!(entries.len(), 81560);
-        filter.insert(entries);
+        assert_eq!(filter.insert(entries), 81560);
 
         let rule = filter.filter(&packet);
         assert!(rule.is_some());
 
         let rule = rule.unwrap();
-        assert!(rule.action.is_some());
-
-        let action = rule.action.unwrap();
-        assert!(action.rewrite.is_some());
-
-        let rewrite = action.rewrite.unwrap();
-        assert_eq!(rewrite.v4, IpAddr::V4(Ipv4Addr::LOCALHOST));
-        assert_eq!(rewrite.v6, IpAddr::V6(Ipv6Addr::LOCALHOST));
+        assert_eq!(rule.ty, Kind::Deny);
     }
 }
