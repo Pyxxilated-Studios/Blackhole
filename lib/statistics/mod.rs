@@ -25,7 +25,7 @@ impl Statistic {
         match self {
             Statistic::Cache(cache) => match stats
                 .entry(CACHE)
-                .or_insert(Statistic::Cache(Cache::default()))
+                .or_insert_with(|| Statistic::Cache(Cache::default()))
             {
                 Statistic::Cache(exists) => {
                     exists.hits += cache.hits;
