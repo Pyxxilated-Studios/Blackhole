@@ -141,6 +141,9 @@ where
         mut packet: Packet,
         address: SocketAddr,
     ) -> Result<()> {
+        self.status = packet.header.rescode;
+        self.answers = packet.answers.clone();
+
         let buffer = I::try_from(packet.clone()).or_else(|err| {
             error!("{err:?}");
 
@@ -152,7 +155,7 @@ where
             packet.authorities = Vec::default();
             packet.resources = Vec::default();
 
-            I::try_from(packet.clone())
+            I::try_from(packet)
         })?;
 
         let sock = socket.read().await;
@@ -160,9 +163,6 @@ where
         sock.writable().await?;
         sock.send_to(buffer.get_range(0, buffer.pos())?, address)
             .await?;
-
-        self.status = packet.header.rescode;
-        self.answers = packet.answers;
 
         Ok(())
     }
@@ -177,14 +177,14 @@ where
         let mut packet = Packet::default();
         packet.header.id = id;
         packet.header.rescode = ResultCode::SERVFAIL;
+        self.answers = Vec::default();
         packet.header.response = true;
         packet.header.answers = 0;
         packet.header.truncated_message = false;
         packet.answers = Vec::default();
+        self.status = ResultCode::SERVFAIL;
         packet.authorities = Vec::default();
         packet.resources = Vec::default();
-
-        self.status = packet.header.rescode;
 
         let buffer = match I::try_from(packet) {
             Ok(buffer) => buffer,
@@ -244,7 +244,8 @@ where
                 self.forward(packet).await
             }
             Some(rule) if rule.ty == Kind::Deny => {
-                self.rule = Some(rule.clone());
+                let action = rule.action.clone();
+                self.rule = Some(rule);
                 let mut packet = packet;
                 packet.header.recursion_available = true;
                 packet.header.response = true;
@@ -258,14 +259,13 @@ where
                         packet.header.answers = 1;
                         packet.answers = vec![Record::A {
                             record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name()),
+                                domain: QualifiedName(packet.questions[0].name.name().clone()),
                                 ttl: Ttl(600),
                                 query_type: QueryType::A,
                                 class: 1,
                                 data_length: 0,
                             },
-                            addr: match rule
-                                .action
+                            addr: match action
                                 .and_then(|action| action.rewrite)
                                 .unwrap_or(Rewrite {
                                     v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -285,14 +285,13 @@ where
                         packet.header.answers = 1;
                         packet.answers = vec![Record::AAAA {
                             record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name()),
+                                domain: QualifiedName(packet.questions[0].name.name().clone()),
                                 ttl: Ttl(600),
                                 query_type: QueryType::AAAA,
                                 class: 1,
                                 data_length: 0,
                             },
-                            addr: match rule
-                                .action
+                            addr: match action
                                 .and_then(|action| action.rewrite)
                                 .unwrap_or(Rewrite {
                                     v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -343,7 +342,7 @@ where
                 Ok(response_packet) => {
                     let id = response_packet.header.id;
 
-                    Cache::insert(response_packet.clone()).await;
+                    Cache::insert(&response_packet).await;
 
                     if let Err(err) = handler.respond(&socket, response_packet, address).await {
                         error!("{err:?}");

@@ -13,8 +13,8 @@ pub struct QualifiedName(pub BString);
 
 impl QualifiedName {
     #[inline]
-    pub fn name(&self) -> BString {
-        self.0.clone()
+    pub fn name(&self) -> &BString {
+        &self.0
     }
 }
 

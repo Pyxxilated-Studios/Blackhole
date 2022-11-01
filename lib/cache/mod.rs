@@ -46,13 +46,12 @@ impl Cache {
 
         let response = cache
             .cache
-            .get(&packet.questions[0].name.name())
-            .and_then(|entry| entry.get(&packet.questions[0].qtype))
-            .cloned();
+            .get(packet.questions[0].name.name())
+            .and_then(|entry| entry.get(&packet.questions[0].qtype));
 
-        match response {
+        match response.cloned() {
             Some((mut packet, expires)) => {
-                if expires.iter().any(|expire| *expire <= Utc::now()) {
+                if expires.iter().any(|expire| *expire < Utc::now()) {
                     None
                 } else {
                     Statistics::record(Statistic::Cache(statistics::Cache {
@@ -62,16 +61,12 @@ impl Cache {
                     }))
                     .await;
 
-                    packet.answers = packet
-                        .answers
-                        .into_iter()
-                        .zip(expires.into_iter())
-                        .map(|(mut answer, expire)| {
+                    packet.answers.iter_mut().zip(expires.into_iter()).for_each(
+                        |(answer, expire)| {
                             answer.record().unwrap().ttl =
                                 ((expire - Utc::now()).num_seconds() as u32).into();
-                            answer
-                        })
-                        .collect();
+                        },
+                    );
 
                     Some(packet)
                 }
@@ -80,7 +75,7 @@ impl Cache {
         }
     }
 
-    pub async fn insert(packet: Packet) {
+    pub async fn insert(packet: &Packet) {
         let mut cache = CACHE.write().await;
 
         let key = packet.questions[0].name.name().clone();
@@ -107,6 +102,6 @@ impl Cache {
             .entry(key)
             .or_default()
             .entry(sub_key)
-            .or_default() = (packet, value);
+            .or_default() = (packet.clone(), value);
     }
 }

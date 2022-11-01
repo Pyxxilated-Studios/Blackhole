@@ -23,7 +23,7 @@ fn default_port() -> u16 {
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
-    #[serde(alias = "filter", rename(serialize = "filter"))]
+    #[serde(alias = "filter", rename(serialize = "filter"), default)]
     pub filters: Vec<FilterList>,
 }
 
