@@ -5,7 +5,7 @@ function server() {
 }
 
 function client() {
-    node index.js
+    deno run --allow-net --allow-env --allow-read index.js
 }
 
 command=$1

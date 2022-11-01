@@ -11,7 +11,7 @@ RUN yarn build
 
 FROM rust:slim as server
 
-RUN apt update && apt install -y pkg-config libssl-dev git
+RUN apt update && apt install -y pkg-config git
 RUN rustup set profile minimal
 RUN rustup default nightly
 
@@ -37,15 +37,15 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM node:buster-slim
+FROM denoland/deno:debian
 
 RUN apt update && apt install -y dnsutils ca-certificates
 
 WORKDIR /blackhole
 
-COPY --from=server /blackhole/target/release/blackhole .
 COPY --from=client /client/build .
 COPY ./client/package.json .
+COPY --from=server /blackhole/target/release/blackhole .
 
 COPY ./entrypoint.bash .
 
@@ -53,9 +53,7 @@ VOLUME /config
 
 ENV LOG_LEVEL="info"
 
-EXPOSE 6379/tcp 6379/udp 3000 5000
-
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "dig", "-p", "6379", "example.com", "@127.0.0.1" ]
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "dig", "-p", "53", "example.com", "@127.0.0.1" ]
 
 ENTRYPOINT [ "./entrypoint.bash" ]
 

@@ -81,6 +81,8 @@
             if (requestsResponse.ok) {
                 requests = (await requestsResponse.json()).Requests;
 
+                if (!requests) return;
+
                 let data: Record<string, number> = {};
                 let timeSeries: Record<string, number> = {};
                 let blockedTimeSeries: Record<string, number> = {};
