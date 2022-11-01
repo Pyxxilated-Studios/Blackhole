@@ -11,7 +11,7 @@ RUN yarn build
 
 FROM rust:alpine as server
 
-RUN apk add musl-dev pkgconfig openssl-dev git
+RUN apk add musl-dev pkgconfig git
 RUN rustup set profile minimal
 RUN rustup default nightly
 
@@ -37,9 +37,9 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM node:alpine
+FROM denoland/deno:alpine
 
-RUN apk add bash drill
+RUN apk add bash drill ca-certificates
 
 WORKDIR /blackhole
 
@@ -53,9 +53,7 @@ VOLUME /config
 
 ENV LOG_LEVEL="info"
 
-EXPOSE 6379/tcp 6379/udp 3000 5000
-
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "drill", "-p", "6379", "example.com", "@127.0.0.1" ]
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "drill", "-p", "53", "example.com", "@127.0.0.1" ]
 
 ENTRYPOINT [ "./entrypoint.bash" ]
 

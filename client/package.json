@@ -29,6 +29,7 @@
         "prettier": "^2",
         "prettier-plugin-svelte": "^2",
         "svelte": "^3",
+        "svelte-adapter-deno": "^0.8.1",
         "svelte-check": "^2",
         "svelte-preprocess": "^4",
         "tailwindcss": "^3",
