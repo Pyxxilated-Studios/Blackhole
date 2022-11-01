@@ -34,8 +34,8 @@ impl Server {
         statistic: String,
         params: HashMap<String, String>,
     ) -> Result<impl warp::Reply, Infallible> {
-        let from = params.get("from").cloned();
-        let to = params.get("to").cloned();
+        let from = params.get("from");
+        let to = params.get("to");
 
         match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to).await {
             Some(requests) => Ok(Response::builder()

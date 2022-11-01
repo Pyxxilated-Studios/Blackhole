@@ -189,3 +189,13 @@ where
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
     }
 }
+
+impl<'a, T: IO, E> WriteTo<'a, T> for &Vec<E>
+where
+    E: WriteTo<'a, T, Out = T> + Clone + Debug,
+{
+    #[inline]
+    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+        self.iter().try_fold(out, |out, val| out.write(val.clone()))
+    }
+}

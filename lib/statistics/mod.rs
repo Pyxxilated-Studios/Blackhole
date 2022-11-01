@@ -131,8 +131,8 @@ impl Statistics {
     #[inline]
     pub async fn retrieve(
         statistic: &str,
-        from: Option<String>,
-        to: Option<String>,
+        from: Option<&String>,
+        to: Option<&String>,
     ) -> Option<Statistic> {
         let statistics = STATISTICS.read().await;
 

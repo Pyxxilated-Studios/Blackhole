@@ -14,7 +14,7 @@ use nom::{
     bytes::complete::{tag, take_while, take_while1},
     character::complete::{line_ending, not_line_ending, one_of, space0, space1},
     combinator::{eof, map, opt, peek},
-    error::{context, ContextError, ParseError, VerboseError},
+    error::{context, ContextError, ParseError},
     multi::{count, many_m_n, many_till, separated_list1},
     sequence::{terminated, tuple},
     AsChar, IResult,
@@ -144,13 +144,8 @@ fn ipv4<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
 
 fn ip6_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IP6_Num",
-        map(many_m_n(1, 4, one_of("0123456789abcdefABCDEF")), |v| {
-            v.iter().collect()
-        }),
-    )(i)
+) -> IResult<&'a str, Vec<char>, E> {
+    context("IP6_Num", many_m_n(1, 4, one_of("0123456789abcdefABCDEF")))(i)
 }
 
 fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
@@ -162,16 +157,26 @@ fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
             tuple((
                 alt((
                     map(tuple((opt(ip6_num), tag("::"))), |(a, b)| {
-                        format!("{}{b}", a.unwrap_or_default())
+                        format!("{}{b}", a.into_iter().flatten().collect::<String>())
                     }),
                     map(count(terminated(ip6_num, tag(":")), 7), |parts| {
-                        parts.join(":")
+                        parts
+                            .into_iter()
+                            .map(|v| String::from_iter(v.into_iter()))
+                            .reduce(|mut acc, e| {
+                                acc.push_str(":");
+                                acc.push_str(&e);
+                                acc
+                            })
+                            .unwrap()
                     }),
                 )),
                 ip6_num,
                 opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
             )),
-            |(a, b, _)| IpAddr::from_str(&format!("{a}{b}")).unwrap(),
+            |(a, b, _)| {
+                IpAddr::from_str(&format!("{a}{}", b.into_iter().collect::<String>())).unwrap()
+            },
         ),
     )(i)
 }
@@ -267,9 +272,8 @@ fn eol<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
 impl Filter {
     #[instrument(level = "info")]
     pub async fn update() {
-        let filters = config::Config::get(|config| config.filters.clone()).await;
-
-        let tasks = filters
+        let tasks = config::Config::get(|config| config.filters.clone())
+            .await
             .into_iter()
             .map(|filter| {
                 tokio::spawn(async move {
@@ -349,7 +353,7 @@ impl Filter {
             .par_bridge()
             .try_fold(
                 || Vec::with_capacity(1024),
-                |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
+                |mut entries, line| match Self::lex::<()>(&line) {
                     Err(_) => Err(Error::FilterError(String::from("Invalid filter list"))),
                     Ok((_, ents)) => {
                         entries.extend(ents.flatten());
@@ -377,66 +381,51 @@ impl Filter {
             Type::Ip(_) => return,
         };
 
-        let node = domain
+        let mut inserted = false;
+
+        let rule = domain
             .split('.')
             .rev()
             .fold(&mut self.rules, |current_node, part| {
                 current_node.children.entry(part.into()).or_default()
+            })
+            .rule
+            .get_or_insert_with(|| {
+                inserted = true;
+                Rule {
+                    domain,
+                    ty,
+                    action: match addr {
+                        None => None,
+                        Some(addr @ IpAddr::V4(_)) => Some(Action {
+                            rewrite: Some(Rewrite {
+                                v4: addr,
+                                v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                            }),
+                        }),
+                        Some(addr @ IpAddr::V6(_)) => Some(Action {
+                            rewrite: Some(Rewrite {
+                                v6: addr,
+                                v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                            }),
+                        }),
+                    },
+                }
             });
 
-        let mut rule = node.rule.clone().unwrap_or(Rule {
-            domain,
-            ty,
-            action: None,
-        });
+        if inserted {
+            return;
+        }
 
         if let Some(ref mut action) = rule.action {
-            if let Some(ref mut re) = action.rewrite {
+            if let Some(ref mut rewrite) = action.rewrite {
                 match addr {
                     None => (),
-                    Some(addr @ IpAddr::V4(_)) => re.v4 = addr,
-                    Some(addr @ IpAddr::V6(_)) => re.v6 = addr,
-                }
-            } else {
-                match addr {
-                    None => (),
-                    Some(addr @ IpAddr::V4(_)) => {
-                        action.rewrite = Some(Rewrite {
-                            v4: addr,
-                            v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                        });
-                    }
-                    Some(addr @ IpAddr::V6(_)) => {
-                        action.rewrite = Some(Rewrite {
-                            v6: addr,
-                            v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                        });
-                    }
-                }
-            }
-        } else {
-            match addr {
-                None => (),
-                Some(addr @ IpAddr::V4(_)) => {
-                    rule.action = Some(Action {
-                        rewrite: Some(Rewrite {
-                            v4: addr,
-                            v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                        }),
-                    });
-                }
-                Some(addr @ IpAddr::V6(_)) => {
-                    rule.action = Some(Action {
-                        rewrite: Some(Rewrite {
-                            v6: addr,
-                            v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                        }),
-                    });
+                    Some(addr @ IpAddr::V4(_)) => rewrite.v4 = addr,
+                    Some(addr @ IpAddr::V6(_)) => rewrite.v6 = addr,
                 }
             }
         }
-
-        node.rule = Some(rule);
     }
 
     #[inline]
@@ -490,6 +479,7 @@ impl Filter {
         Ok(())
     }
 
+    #[inline]
     pub fn filter(&self, packet: &dns::packet::Packet) -> Option<Rule> {
         packet.questions[0]
             .name
@@ -502,7 +492,8 @@ impl Filter {
                     None => Err(current_node),
                 }
             })
-            .map_or_else(|err| err.rule.clone(), |rule| rule.rule.clone())
+            .map_or_else(|err| &err.rule, |rule| &rule.rule)
+            .clone()
     }
 
     pub fn check(packet: &dns::packet::Packet) -> Option<Rule> {
@@ -529,6 +520,17 @@ mod tests {
 
     #[test]
     fn parsing() {
+        let mut filter = Filter::default();
+
+        let entries = Filter::parse(Path::new("benches/test.txt"));
+        assert!(entries.is_ok());
+
+        let entries = entries.unwrap();
+        assert_eq!(filter.insert(entries), 81560);
+    }
+
+    #[test]
+    fn checking() {
         let mut filter = Filter::default();
 
         let packet = Packet {
@@ -558,11 +560,8 @@ mod tests {
             resources: vec![],
         };
 
-        let entries = Filter::parse(Path::new("benches/test.txt"));
-        assert!(entries.is_ok());
-
-        let entries = entries.unwrap();
-        assert_eq!(filter.insert(entries), 81560);
+        let entries = Filter::parse(Path::new("benches/test.txt")).unwrap();
+        filter.insert(entries);
 
         let rule = filter.filter(&packet);
         assert!(rule.is_some());

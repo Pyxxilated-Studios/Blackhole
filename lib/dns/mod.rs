@@ -491,7 +491,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
             Record::TXT {
                 ref record,
                 ref data,
-            } => write_record!(out, record, data.clone()),
+            } => write_record!(out, record, data),
             Record::SRV {
                 ref record,
                 priority,
@@ -511,7 +511,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 .write(packet_len)?
                 .write(flags)?
                 .write(data.len() as u16)?
-                .write(data.clone()),
+                .write(data),
             Record::DS {
                 ref record,
                 key_tag,
@@ -519,7 +519,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 digest_type,
                 ref digest,
             } => {
-                write_record!(out, record, key_tag, algorithm, digest_type, digest.clone())
+                write_record!(out, record, key_tag, algorithm, digest_type, digest)
             }
             Record::RRSIG {
                 ref record,
@@ -544,21 +544,21 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                     inception,
                     tag,
                     name,
-                    signature.clone()
+                    signature
                 )
             }
             Record::NSEC {
                 ref record,
                 ref next_domain,
                 ref type_map,
-            } => write_record!(out, record, next_domain, type_map.clone()),
+            } => write_record!(out, record, next_domain, type_map),
             Record::DNSKEY {
                 ref record,
                 flags,
                 protocol,
                 algorithm,
                 ref public_key,
-            } => write_record!(out, record, flags, protocol, algorithm, public_key.clone()),
+            } => write_record!(out, record, flags, protocol, algorithm, public_key),
             Record::NSEC3 {
                 ref record,
                 algorithm,
@@ -576,10 +576,10 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 flags,
                 iterations,
                 salt_length,
-                salt.clone(),
+                salt,
                 hash_length,
-                hash.clone(),
-                type_map.clone()
+                hash,
+                type_map
             ),
             Record::NSEC3PARAM {
                 ref record,
@@ -589,15 +589,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 salt_length,
                 ref salt,
             } => {
-                write_record!(
-                    out,
-                    record,
-                    algorithm,
-                    flags,
-                    iterations,
-                    salt_length,
-                    salt.clone()
-                )
+                write_record!(out, record, algorithm, flags, iterations, salt_length, salt)
             }
             Record::SVCB {
                 ref record,
@@ -611,7 +603,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 ref target,
                 ref params,
             } => {
-                write_record!(out, record, priority, target, params.clone())
+                write_record!(out, record, priority, target, params)
             }
             Record::UNKNOWN { .. } => {
                 warn!("Skipping record: {:?}", self);

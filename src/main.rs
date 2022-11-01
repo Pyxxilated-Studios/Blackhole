@@ -36,9 +36,9 @@ fn enable_tracing() {
 
 #[tokio::main]
 async fn main() {
-    let cli = cli::Cli::parse();
-
     enable_tracing();
+
+    let mut cli = cli::Cli::parse();
 
     let udp_server = match udp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
@@ -55,8 +55,7 @@ async fn main() {
 
     blackhole::config::Config::load(
         cli.config
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("/config/blackhole.toml"))
+            .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml"))
             .as_path(),
     )
     .await
