@@ -162,9 +162,9 @@ fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
                     map(count(terminated(ip6_num, tag(":")), 7), |parts| {
                         parts
                             .into_iter()
-                            .map(|v| String::from_iter(v.into_iter()))
+                            .map(|v| v.into_iter().collect::<String>())
                             .reduce(|mut acc, e| {
-                                acc.push_str(":");
+                                acc.push(':');
                                 acc.push_str(&e);
                                 acc
                             })
