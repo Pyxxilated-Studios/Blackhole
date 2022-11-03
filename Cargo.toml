@@ -2,7 +2,12 @@
 name = "blackhole"
 version = "0.6.0"
 edition = "2021"
-publish = false
+publish = true
+authors = ["pyxxil <pyxxil@pyxxilated.studio>"]
+license = "Apache-2.0"
+description = "A DNS Filtering Server"
+homepage = "https://github.com/pyxxil/blackhole"
+repository = "https://github.com/pyxxil/blackhole"
 
 [lib]
 name = "blackhole"
