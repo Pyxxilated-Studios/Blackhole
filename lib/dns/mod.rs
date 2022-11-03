@@ -54,6 +54,8 @@ impl<I: IO> FromBuffer<I> for RR {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for RR {
+    type Out = T;
+
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         out.write(self.domain)?
             .write(self.query_type)?
@@ -103,6 +105,8 @@ impl PartialOrd<Ttl> for Ttl {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for Ttl {
+    type Out = T;
+
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         out.write(self.0)
     }
@@ -239,6 +243,8 @@ impl<I: IO> FromBuffer<I> for QueryType {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for QueryType {
+    type Out = T;
+
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         out.write(&u16::from(self).to_be_bytes())
     }
@@ -442,6 +448,8 @@ macro_rules! write_record {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for Record {
+    type Out = T;
+
     #[allow(clippy::too_many_lines)]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         match self {
