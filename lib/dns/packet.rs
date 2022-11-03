@@ -294,17 +294,28 @@ impl<I: IO> FromBuffer<I> for Packet {
 
 #[allow(unused_imports)]
 mod test {
+    use std::net::Ipv6Addr;
+
     use crate::dns::{
         header::Header,
         packet::{Buffer, Packet, ResizableBuffer},
         qualified_name::QualifiedName,
         question::Question,
-        traits::FromBuffer,
+        traits::{FromBuffer, IO},
         QueryType, Record, ResultCode, Ttl, RR,
     };
 
+    #[allow(unused)]
+    fn serialize<T>(packet: &Packet) -> Packet
+    where
+        T: IO + TryFrom<Packet>,
+        T::Error: std::fmt::Debug,
+    {
+        Packet::from_buffer(&mut T::try_from(packet.clone()).unwrap()).unwrap()
+    }
+
     #[test]
-    fn serialise() {
+    fn serialise_resizable_buffer() {
         let packet = Packet {
             header: Header {
                 id: 56029,
@@ -355,8 +366,53 @@ mod test {
             resources: vec![],
         };
 
-        let pack =
-            Packet::from_buffer(&mut ResizableBuffer::try_from(packet.clone()).unwrap()).unwrap();
+        let pack = serialize::<ResizableBuffer>(&packet);
+        assert_eq!(packet.header, pack.header);
+        assert_eq!(packet.questions, pack.questions);
+        assert_eq!(packet.answers, pack.answers);
+        assert_eq!(packet.resources, pack.resources);
+        assert_eq!(packet.authorities, pack.authorities);
+    }
+
+    #[test]
+    fn serialise_buffer() {
+        let packet = Packet {
+            header: Header {
+                id: 56029,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: ResultCode::NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 1,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("example.com".into()),
+                qtype: QueryType::AAAA,
+            }],
+            answers: vec![Record::AAAA {
+                record: RR {
+                    domain: QualifiedName("example.com".into()),
+                    ttl: Ttl(3600),
+                    query_type: QueryType::AAAA,
+                    class: 1,
+                    data_length: 16,
+                },
+                addr: Ipv6Addr::UNSPECIFIED,
+            }],
+            authorities: vec![],
+            resources: vec![],
+        };
+
+        let pack = serialize::<Buffer>(&packet);
         assert_eq!(packet.header, pack.header);
         assert_eq!(packet.questions, pack.questions);
         assert_eq!(packet.answers, pack.answers);

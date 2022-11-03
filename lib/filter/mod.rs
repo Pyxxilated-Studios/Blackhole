@@ -195,6 +195,7 @@ fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
                 opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
             )),
             |(a, b, _)| {
+                println!("'{a}:{b:#?}'");
                 IpAddr::from_str(&format!("{a}{}", b.into_iter().collect::<String>())).unwrap()
             },
         ),
