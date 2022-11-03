@@ -16,7 +16,7 @@ pub trait FromBuffer<I: IO> {
 }
 
 pub trait WriteTo<'a, T: IO> {
-    type Out: IO = T;
+    type Out: IO;
 
     ///
     /// Write an element (or series thereof) to an output.
@@ -123,6 +123,8 @@ pub trait IO {
 macro_rules! impl_write {
     ( $($t:ty),* ) => {
         $(impl<'a, T: IO> WriteTo<'a, T> for $t {
+            type Out = T;
+
             fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
                 if core::any::TypeId::of::<$t>() == core::any::TypeId::of::<u8>() {
                     out.set(out.pos(), self as u8)?;
@@ -167,6 +169,8 @@ impl_write!(u8, u16, u32, u64, u128, usize);
 impl_try_from!(u16, u32, u64, u128, usize);
 
 impl<'a, T: IO> WriteTo<'a, T> for &[u8] {
+    type Out = T;
+
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
@@ -174,6 +178,8 @@ impl<'a, T: IO> WriteTo<'a, T> for &[u8] {
 }
 
 impl<'a, T: IO, const N: usize> WriteTo<'a, T> for &[u8; N] {
+    type Out = T;
+
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
@@ -184,6 +190,8 @@ impl<'a, T: IO, E> WriteTo<'a, T> for Vec<E>
 where
     E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
+    type Out = T;
+
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
@@ -194,6 +202,8 @@ impl<'a, T: IO, E> WriteTo<'a, T> for &Vec<E>
 where
     E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
+    type Out = T;
+
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
