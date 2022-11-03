@@ -37,9 +37,12 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM denoland/deno:alpine-1.27.0
+FROM busybox:musl as busybox
 
-RUN apk add bash drill ca-certificates
+FROM denoland/deno:distroless-1.27.0
+
+# Now copy the static shell into base image.
+COPY --from=busybox /bin/sh /bin/sh
 
 WORKDIR /blackhole
 
