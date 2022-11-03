@@ -1,4 +1,4 @@
-FROM node:buster-slim as client
+FROM node:19-buster-slim as client
 
 WORKDIR /client
 
@@ -9,7 +9,7 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:slim as server
+FROM rust:1.64-slim as server
 
 RUN apt update && apt install -y pkg-config git
 RUN rustup set profile minimal
@@ -37,7 +37,7 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM denoland/deno:debian
+FROM denoland/deno:debian-1.27.0
 
 RUN apt update && apt install -y dnsutils ca-certificates
 
