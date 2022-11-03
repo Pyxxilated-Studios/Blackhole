@@ -8,20 +8,24 @@ use crate::statistics::Statistics;
 #[derive(Clone)]
 pub struct Server;
 
+fn statistics() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
+    warp::path!("statistics" / String)
+        .and(warp::path::end())
+        .and(warp::query::<HashMap<String, String>>())
+        .and_then(Server::statistics)
+}
+
+fn api() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
+    let all = warp::path("statistics")
+        .and(warp::path::end())
+        .and_then(Server::all);
+
+    warp::path("api").and(statistics().or(all))
+}
+
 impl Server {
     pub async fn run(self) {
-        let statistics = warp::path!("statistics" / String)
-            .and(warp::path::end())
-            .and(warp::query::<HashMap<String, String>>())
-            .and_then(Server::statistics);
-
-        let all = warp::path("statistics")
-            .and(warp::path::end())
-            .and_then(Server::all);
-
-        let api = warp::path("api").and(statistics.or(all));
-
-        warp::serve(api).run(([0, 0, 0, 0], 5000)).await;
+        warp::serve(api()).run(([0, 0, 0, 0], 5000)).await;
     }
 
     async fn all() -> Result<impl warp::Reply, Infallible> {
@@ -45,5 +49,46 @@ impl Server {
                 .header(CONTENT_TYPE, "application/json")
                 .body(String::from("{}"))),
         }
+    }
+}
+
+#[allow(unused_imports)]
+mod test {
+    use reqwest::header::CONTENT_TYPE;
+
+    #[tokio::test]
+    async fn statistics() {
+        let filter = super::api();
+
+        let response = warp::test::request()
+            .path("/api/statistics/requests")
+            .reply(&filter)
+            .await;
+
+        assert_eq!(response.status(), 200);
+        assert!(response.headers().contains_key(CONTENT_TYPE));
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(response.body(), "{}");
+    }
+
+    #[tokio::test]
+    async fn all() {
+        let filter = super::api();
+
+        let response = warp::test::request()
+            .path("/api/statistics")
+            .reply(&filter)
+            .await;
+
+        assert_eq!(response.status(), 200);
+        assert!(response.headers().contains_key(CONTENT_TYPE));
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(response.body(), "{}");
     }
 }
