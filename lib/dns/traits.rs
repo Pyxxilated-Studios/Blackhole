@@ -29,7 +29,7 @@ pub trait WriteTo<'a, T: IO> {
     /// writing the element to the buffer caused it to overflow its
     /// internal buffer
     ///
-    fn write_to(&self, out: &'a mut Self::Out) -> Result<&'a mut Self::Out>;
+    fn write_to(self, out: &'a mut Self::Out) -> Result<&'a mut Self::Out>;
 }
 
 pub trait IO {
@@ -123,9 +123,9 @@ pub trait IO {
 macro_rules! impl_write {
     ( $($t:ty),* ) => {
         $(impl<'a, T: IO> WriteTo<'a, T> for $t {
-            fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+            fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
                 if core::any::TypeId::of::<$t>() == core::any::TypeId::of::<u8>() {
-                    out.set(out.pos(), *self as u8)?;
+                    out.set(out.pos(), self as u8)?;
                     out.step(1)
                 } else {
                     let bytes = core::mem::size_of::<$t>();
@@ -168,14 +168,14 @@ impl_try_from!(u16, u32, u64, u128, usize);
 
 impl<'a, T: IO> WriteTo<'a, T> for &[u8] {
     #[inline]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
     }
 }
 
 impl<'a, T: IO, const N: usize> WriteTo<'a, T> for &[u8; N] {
     #[inline]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, &val| out.write(val))
     }
 }
@@ -185,7 +185,7 @@ where
     E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
     #[inline]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
     }
 }
@@ -195,7 +195,7 @@ where
     E: WriteTo<'a, T, Out = T> + Clone + Debug,
 {
     #[inline]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         self.iter().try_fold(out, |out, val| out.write(val.clone()))
     }
 }

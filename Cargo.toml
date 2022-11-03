@@ -18,13 +18,12 @@ harness = false
 
 [dependencies]
 async-trait = "0.1"
-bstr = { version = "1.0.0", features = [ "serde" ] }
+bstr = { version = "1.0.0", default-features = false, features = [ "alloc", "serde" ] }
 chrono = { version = "0.4", default-features = false, features = [ "clock", "serde" ] }
 clap = { version = "4" , features = [ "derive" ] }
 criterion = { version = "0.4", default-features = false, features = [ "html_reports", "plotters", "real_blackbox" ] }
 nom = "7"
 num = { version = "0.4", default-features = false }
-opentelemetry = { version = "0.18", default-features = false, features = [ "rt-tokio" ] }
 rayon = "1"
 reqwest = { version = "0.11", default-features = false, features = [ "brotli", "gzip", "rustls-tls-webpki-roots" ] }
 rustc-hash = "1"
@@ -34,9 +33,8 @@ thiserror = "1"
 tokio = { version = "1", default-features = false, features = [ "net", "macros", "parking_lot", "rt-multi-thread", "time", "tracing" ] }
 toml = "0.5"
 tracing = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
-tracing-opentelemetry = "0.18"
 tracing-subscriber = { version = "0.3", default-features = false, features =  [ "fmt", "parking_lot", "smallvec", "tracing-log" ] }
-warp = { version = "0.3", default-features = false, features = [ "async-compression", "compression"] }
+warp = { version = "0.3", default-features = false }
 
 [profile.release]
 lto = true

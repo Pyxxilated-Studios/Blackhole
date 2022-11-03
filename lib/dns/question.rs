@@ -14,8 +14,8 @@ pub struct Question {
 
 impl<'a, T: IO> WriteTo<'a, T> for Question {
     #[inline]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        out.write(&self.name)?.write(self.qtype)?.write(1u16)
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write(self.name)?.write(self.qtype)?.write(1u16)
     }
 }
 
