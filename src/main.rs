@@ -71,7 +71,9 @@ async fn main() {
 
     let api_server = tokio::spawn(async move { blackhole::api::Server.run().await });
 
-    let filter = tokio::spawn(async move { blackhole::filter::Filter::update().await });
-
-    let _joins = tokio::join!(udp_server, api_server, filter, scheduler);
+    tokio::select! {
+        _ = udp_server => {}
+        _ = api_server => {}
+        _ = scheduler => {}
+    }
 }
