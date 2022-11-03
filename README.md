@@ -5,6 +5,7 @@
 ![License](https://img.shields.io/github/license/pyxxil/blackhole)
 ![Docker](https://ghcr-badge.herokuapp.com/pyxxil/blackhole/latest_tag?label=latest)
 ![Docker](https://ghcr-badge.herokuapp.com/pyxxil/blackhole/size)
+[![codecov](https://codecov.io/gh/Pyxxil/Blackhole/branch/main/graph/badge.svg?token=98FLSLAD6M)](https://codecov.io/gh/Pyxxil/Blackhole)
 
 - [Blackhole](#blackhole)
   - [Similar Projects](#similar-projects)
