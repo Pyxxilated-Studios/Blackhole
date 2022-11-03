@@ -21,19 +21,37 @@ use nom::{
 };
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{
-    config::{self, FilterList},
-    dns,
-};
+use crate::{config, dns};
 
 static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
 
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
+
+#[derive(Clone, Debug, Eq, Serialize, Deserialize)]
+pub struct List {
+    pub name: String,
+    pub url: String,
+    #[serde(skip)]
+    pub entries: usize,
+}
+
+impl PartialEq for List {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.url == other.url
+    }
+}
+
+impl std::hash::Hash for List {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.url.hash(state);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, PartialOrd)]
 pub struct Rewrite {
@@ -77,7 +95,7 @@ pub struct Rules {
 
 #[derive(Default, Debug)]
 pub struct Filter {
-    pub(crate) lists: FxHashSet<FilterList>,
+    pub(crate) lists: FxHashSet<List>,
     pub(crate) rules: Rules,
 }
 
@@ -88,10 +106,12 @@ pub enum Error {
     #[error("{0}")]
     RequestError(#[from] reqwest::Error),
     #[error("{0}")]
+    DownloadError(String),
+    #[error("{0}")]
     FilterError(String),
 }
 
-fn file_name_for(list: &FilterList) -> String {
+fn file_name_for(list: &List) -> String {
     let mut hasher = DefaultHasher::new();
     list.hash(&mut hasher);
     format!("{}.txt", hasher.finish())
@@ -187,10 +207,7 @@ fn ip<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     context(
         "IP",
         map(
-            tuple((
-                alt((ipv4, ipv6)),
-                peek(alt((space1, map(eol, |_| ""), eof))),
-            )),
+            tuple((alt((ipv4, ipv6)), peek(alt((space1, eol, eof))))),
             |(ip, _)| ip,
         ),
     )(i)
@@ -259,12 +276,12 @@ fn comment<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
 
 fn eol<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     i: &'a str,
-) -> IResult<&'a str, (), E> {
+) -> IResult<&'a str, &str, E> {
     context(
         "EOL",
         map(
             tuple((space0, opt(comment), alt((eof, line_ending)))),
-            |(_, _, _)| (),
+            |(_, _, _)| "",
         ),
     )(i)
 }
@@ -289,7 +306,7 @@ impl Filter {
         }
     }
 
-    async fn download(filter: FilterList) -> Result<(), Error> {
+    async fn download(filter: List) -> Result<(), Error> {
         if !Path::new(&file_name_for(&filter)).exists() {
             info!("Fetching {}", filter.url);
 
@@ -302,7 +319,11 @@ impl Filter {
             let response = client.get(&filter.url).send().await?;
 
             if !response.status().is_success() {
-                return Err(Error::from(response.error_for_status().expect_err("")));
+                return Err(Error::DownloadError(format!(
+                    "{}: {}",
+                    response.status(),
+                    response.text().await?
+                )));
             }
 
             let contents = response.text().await?;
@@ -443,7 +464,7 @@ impl Filter {
     /// If it fails to open the list
     ///
     #[instrument(skip(list), err)]
-    pub async fn import(mut list: FilterList) -> Result<(), Error> {
+    pub async fn import(mut list: List) -> Result<(), Error> {
         info!("loading filter list: {}", list.name);
 
         let file = file_name_for(&list);
@@ -462,10 +483,7 @@ impl Filter {
     /// Reset the Global Filter to a blank slate. This is mostly useful
     /// when removing filters
     ///
-    /// # Errors
-    /// This should only error when a filter list fails to be imported
-    ///
-    pub async fn reset() -> Result<(), Error> {
+    pub async fn reset() {
         let lists = {
             let mut filter = FILTER.write().await;
             filter.rules = Rules::default();
@@ -473,10 +491,8 @@ impl Filter {
         };
 
         for list in lists {
-            Self::import(list).await?;
+            std::fs::remove_file(file_name_for(&list)).unwrap_or_default();
         }
-
-        Ok(())
     }
 
     #[inline]

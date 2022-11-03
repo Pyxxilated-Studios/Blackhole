@@ -1,9 +1,7 @@
 use std::{
     collections::HashSet,
     fmt::Debug,
-    net::IpAddr,
     path::Path,
-    str::FromStr,
     sync::{Arc, LazyLock},
 };
 
@@ -12,64 +10,19 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::instrument;
 
+use crate::{filter::List, schedule::Schedule, server::udp::Upstream};
+
 pub static CONFIG: LazyLock<Arc<RwLock<Config>>> = LazyLock::new(Arc::default);
 static CONFIG_FILE: LazyLock<Arc<RwLock<String>>> = LazyLock::new(Arc::default);
-
-fn default_port() -> u16 {
-    53
-}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
     #[serde(alias = "filter", rename(serialize = "filter"), default)]
-    pub filters: Vec<FilterList>,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Upstream {
-    pub ip: IpAddr,
-    #[serde(default = "default_port")]
-    pub port: u16,
-}
-
-impl FromStr for Upstream {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.split_once(':') {
-            Some((ip, port)) => Ok(Upstream {
-                ip: ip.parse().map_err(|e| format!("{e}"))?,
-                port: port.parse().map_err(|_| "invalid port".to_string())?,
-            }),
-            None => Ok(Upstream {
-                ip: value.parse().map_err(|e| format!("{e}"))?,
-                port: default_port(),
-            }),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Serialize, Deserialize)]
-pub struct FilterList {
-    pub name: String,
-    pub url: String,
-    #[serde(skip)]
-    pub entries: usize,
-}
-
-impl PartialEq for FilterList {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.url == other.url
-    }
-}
-
-impl std::hash::Hash for FilterList {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.url.hash(state);
-    }
+    pub filters: Vec<List>,
+    #[serde(alias = "schedule", rename(serialize = "schedule"), default)]
+    pub schedules: Vec<Schedule>,
 }
 
 #[async_trait]
@@ -103,6 +56,7 @@ impl Load for &Path {
 
         config.upstreams.extend(conf.upstreams);
         config.filters.extend(conf.filters);
+        config.schedules.extend(conf.schedules);
 
         Ok(())
     }

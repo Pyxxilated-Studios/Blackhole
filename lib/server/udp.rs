@@ -2,12 +2,13 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{net::UdpSocket, sync::RwLock};
 use tracing::{error, info, instrument, log::trace};
 
@@ -24,6 +25,34 @@ use crate::{
     filter::{Filter, Kind, Rewrite, Rule},
     statistics::{Average, Request, Statistic, Statistics},
 };
+
+fn default_port() -> u16 {
+    53
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Upstream {
+    pub ip: IpAddr,
+    #[serde(default = "default_port")]
+    pub port: u16,
+}
+
+impl FromStr for Upstream {
+    type Err = String;
+
+    fn from_str(value: &str) -> core::result::Result<Self, Self::Err> {
+        match value.split_once(':') {
+            Some((ip, port)) => Ok(Upstream {
+                ip: ip.parse().map_err(|e| format!("{e}"))?,
+                port: port.parse().map_err(|_| "invalid port".to_string())?,
+            }),
+            None => Ok(Upstream {
+                ip: value.parse().map_err(|e| format!("{e}"))?,
+                port: default_port(),
+            }),
+        }
+    }
+}
 
 pub struct ServerBuilder {
     port: u16,
@@ -213,7 +242,18 @@ where
     async fn forward(&mut self, packet: Packet) -> Result<Packet> {
         trace!("Forwarding packet: ID: {}", packet.header.id);
 
-        let server = Config::get(|config| config.upstreams.iter().next().unwrap().clone()).await;
+        let server = Config::get(|config| {
+            config
+                .upstreams
+                .iter()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| Upstream {
+                    ip: IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9)),
+                    port: 53,
+                })
+        })
+        .await;
 
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
 

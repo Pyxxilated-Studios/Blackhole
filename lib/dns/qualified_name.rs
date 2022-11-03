@@ -27,8 +27,8 @@ impl Serialize for QualifiedName {
     }
 }
 
-impl<'a, T: IO> WriteTo<'a, T> for &QualifiedName {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+impl<'a, T: IO> WriteTo<'a, T> for QualifiedName {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         if self.0.is_empty() {
             out.write(0u8)
         } else {

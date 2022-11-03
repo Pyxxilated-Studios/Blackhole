@@ -11,5 +11,6 @@ pub mod cache;
 pub mod config;
 pub mod dns;
 pub mod filter;
+pub mod schedule;
 pub mod server;
 pub mod statistics;

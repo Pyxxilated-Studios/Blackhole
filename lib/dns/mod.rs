@@ -6,14 +6,14 @@ pub mod traits;
 
 use core::{
     cmp::{Ord, Ordering},
-    hash::{Hash, Hasher},
+    hash::Hash,
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bstr::BString;
 use serde::Serialize;
 use thiserror::Error;
-use tracing::warn;
+use tracing::trace;
 
 use crate::dns::{
     qualified_name::QualifiedName,
@@ -53,9 +53,9 @@ impl<I: IO> FromBuffer<I> for RR {
     }
 }
 
-impl<'a, T: IO> WriteTo<'a, T> for &RR {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        out.write(&self.domain)?
+impl<'a, T: IO> WriteTo<'a, T> for RR {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write(self.domain)?
             .write(self.query_type)?
             .write(self.class)?
             .write(self.ttl)?
@@ -102,16 +102,8 @@ impl PartialOrd<Ttl> for Ttl {
     }
 }
 
-impl Hash for Ttl {
-    fn hash<H>(&self, _: &mut H)
-    where
-        H: Hasher,
-    {
-    }
-}
-
 impl<'a, T: IO> WriteTo<'a, T> for Ttl {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         out.write(self.0)
     }
 }
@@ -247,8 +239,8 @@ impl<I: IO> FromBuffer<I> for QueryType {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for QueryType {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        out.write(&u16::from(*self).to_be_bytes())
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write(&u16::from(self).to_be_bytes())
     }
 }
 
@@ -451,35 +443,28 @@ macro_rules! write_record {
 
 impl<'a, T: IO> WriteTo<'a, T> for Record {
     #[allow(clippy::too_many_lines)]
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
-        match *self {
-            Record::A { ref record, addr } => {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        match self {
+            Record::A { record, addr } => {
                 write_record!(out, record, u32::from(addr))
             }
-            Record::NS {
-                ref record,
-                ref host,
-            }
-            | Record::CNAME {
-                ref record,
-                ref host,
-            } => {
+            Record::NS { record, host } | Record::CNAME { record, host } => {
                 write_record!(out, record, host)
             }
             Record::MX {
-                ref record,
+                record,
                 priority,
-                ref host,
+                host,
             } => {
                 write_record!(out, record, priority, host)
             }
-            Record::AAAA { ref record, addr } => {
+            Record::AAAA { record, addr } => {
                 write_record!(out, record, u128::from(addr))
             }
             Record::SOA {
-                ref record,
-                ref m_name,
-                ref r_name,
+                record,
+                m_name,
+                r_name,
                 serial,
                 refresh,
                 retry,
@@ -488,21 +473,18 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
             } => {
                 write_record!(out, record, m_name, r_name, serial, refresh, retry, expire, minimum)
             }
-            Record::TXT {
-                ref record,
-                ref data,
-            } => write_record!(out, record, data),
+            Record::TXT { record, data } => write_record!(out, record, data),
             Record::SRV {
-                ref record,
+                record,
                 priority,
                 weight,
                 port,
-                ref host,
+                host,
             } => {
                 write_record!(out, record, priority, weight, port, host)
             }
             Record::OPT {
-                ref data,
+                data,
                 packet_len,
                 flags,
             } => out
@@ -513,16 +495,16 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 .write(data.len() as u16)?
                 .write(data),
             Record::DS {
-                ref record,
+                record,
                 key_tag,
                 algorithm,
                 digest_type,
-                ref digest,
+                digest,
             } => {
                 write_record!(out, record, key_tag, algorithm, digest_type, digest)
             }
             Record::RRSIG {
-                ref record,
+                record,
                 ty,
                 algorithm,
                 labels,
@@ -530,8 +512,8 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 expiration,
                 inception,
                 tag,
-                ref name,
-                ref signature,
+                name,
+                signature,
             } => {
                 write_record!(
                     out,
@@ -548,27 +530,27 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 )
             }
             Record::NSEC {
-                ref record,
-                ref next_domain,
-                ref type_map,
+                record,
+                next_domain,
+                type_map,
             } => write_record!(out, record, next_domain, type_map),
             Record::DNSKEY {
-                ref record,
+                record,
                 flags,
                 protocol,
                 algorithm,
-                ref public_key,
+                public_key,
             } => write_record!(out, record, flags, protocol, algorithm, public_key),
             Record::NSEC3 {
-                ref record,
+                record,
                 algorithm,
                 flags,
                 iterations,
                 salt_length,
-                ref salt,
+                salt,
                 hash_length,
-                ref hash,
-                ref type_map,
+                hash,
+                type_map,
             } => write_record!(
                 out,
                 record,
@@ -582,31 +564,31 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 type_map
             ),
             Record::NSEC3PARAM {
-                ref record,
+                record,
                 algorithm,
                 flags,
                 iterations,
                 salt_length,
-                ref salt,
+                salt,
             } => {
                 write_record!(out, record, algorithm, flags, iterations, salt_length, salt)
             }
             Record::SVCB {
-                ref record,
+                record,
                 priority,
-                ref target,
-                ref params,
+                target,
+                params,
             }
             | Record::HTTPS {
-                ref record,
+                record,
                 priority,
-                ref target,
-                ref params,
+                target,
+                params,
             } => {
                 write_record!(out, record, priority, target, params)
             }
             Record::UNKNOWN { .. } => {
-                warn!("Skipping record: {:?}", self);
+                trace!("Skipping record: {:?}", self);
                 Ok(out)
             }
         }

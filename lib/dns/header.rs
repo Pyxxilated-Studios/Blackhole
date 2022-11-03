@@ -57,7 +57,7 @@ impl<I: IO> FromBuffer<I> for Header {
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for Header {
-    fn write_to(&self, out: &'a mut T) -> Result<&'a mut T> {
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
         out.write(self.id)?
             .write(
                 u8::from(self.recursion_desired)
