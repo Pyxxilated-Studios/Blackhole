@@ -27,6 +27,14 @@ impl Sched {
             }
         }
     }
+
+    async fn init(&self) {
+        match self {
+            Sched::Filters => {
+                Filter::update().await;
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -93,6 +101,7 @@ impl Scheduler {
 
     pub async fn init(schedules: Vec<Schedule>) {
         for schedule in schedules {
+            schedule.name.init().await;
             Self::schedule(schedule).await;
         }
 
