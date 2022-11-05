@@ -1,8 +1,4 @@
-use std::{
-    num::NonZeroU64,
-    sync::{Arc, LazyLock},
-    time::Duration,
-};
+use std::{num::NonZeroU64, sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -11,7 +7,7 @@ use tokio::{sync::RwLock, time::sleep};
 
 use crate::filter::Filter;
 
-static SCHEDULER: LazyLock<Arc<RwLock<Scheduler>>> = LazyLock::new(Arc::default);
+static SCHEDULER: LazyLock<RwLock<Scheduler>> = LazyLock::new(RwLock::default);
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Sched {

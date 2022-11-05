@@ -28,6 +28,8 @@ pub enum DNSError {
     EndOfBuffer,
     #[error("Timeout")]
     Timeout(#[from] tokio::time::error::Elapsed),
+    #[error("Packet is Invalid")]
+    InvalidPacket,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;
@@ -696,7 +698,9 @@ impl<I: IO> FromBuffer<I> for Record {
                 let algorithm = buffer.read()?;
                 let digest_type = buffer.read()?;
 
-                let digest_length = record.data_length as usize - (buffer.pos() - start);
+                let Some(digest_length) = (record.data_length as usize).checked_sub(buffer.pos() - start) else {
+                    return Err(DNSError::InvalidPacket);
+                };
 
                 Ok(Record::DS {
                     record,
@@ -717,7 +721,13 @@ impl<I: IO> FromBuffer<I> for Record {
                 let tag = buffer.read()?;
                 let name = buffer.read()?;
 
-                let sign_len = record.data_length as usize - (buffer.pos() - start);
+                let sign_len = if let Some(length) =
+                    (record.data_length as usize).checked_sub(buffer.pos() - start)
+                {
+                    length
+                } else {
+                    return Err(DNSError::InvalidPacket);
+                };
 
                 Ok(Record::RRSIG {
                     record,
@@ -736,7 +746,9 @@ impl<I: IO> FromBuffer<I> for Record {
                 let start = buffer.pos();
                 let next_domain = buffer.read()?;
 
-                let map_len = record.data_length as usize - (buffer.pos() - start);
+                let Some(map_len) = (record.data_length as usize).checked_sub(buffer.pos() - start) else {
+                    return Err(DNSError::InvalidPacket);
+                };
 
                 Ok(Record::NSEC {
                     record,
@@ -748,7 +760,8 @@ impl<I: IO> FromBuffer<I> for Record {
                 let flags = buffer.read()?;
                 let protocol = buffer.read()?;
                 let algorithm = buffer.read()?;
-                let public_key = buffer.read_range(record.data_length as usize - 4)?.to_vec();
+                let Some(pub_key_length) = (record.data_length as usize).checked_sub(4) else { return Err(DNSError::InvalidPacket) };
+                let public_key = buffer.read_range(pub_key_length)?.to_vec();
 
                 Ok(Record::DNSKEY {
                     record,
@@ -770,7 +783,10 @@ impl<I: IO> FromBuffer<I> for Record {
                 let hash_length = buffer.read()?;
                 let hash = buffer.read_range(hash_length)?.to_vec();
 
-                let map_len = record.data_length as usize - (buffer.pos() - start);
+                let Some(map_len) = (record.data_length as usize).checked_sub(buffer.pos() - start) else {
+                    return Err(DNSError::InvalidPacket);
+                };
+
                 let type_map = buffer.read_range(map_len)?.to_vec();
 
                 Ok(Record::NSEC3 {
@@ -806,7 +822,10 @@ impl<I: IO> FromBuffer<I> for Record {
                 let priority = buffer.read()?;
                 let target = buffer.read()?;
 
-                let params_length = record.data_length as usize - (buffer.pos() - start);
+                let Some(params_length) = (record.data_length as usize).checked_sub(buffer.pos() - start) else {
+                    return Err(DNSError::InvalidPacket);
+                };
+
                 let params = buffer.read_range(params_length)?.to_vec();
 
                 if record.query_type == QueryType::SVCB {

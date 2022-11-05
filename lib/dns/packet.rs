@@ -20,7 +20,7 @@ pub struct Buffer {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResizableBuffer {
     pub buffer: Vec<u8>,
-    pub pos: usize,
+    pub pos: u16,
 }
 
 impl Default for ResizableBuffer {
@@ -72,7 +72,7 @@ impl IO for Buffer {
 
     fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Buffer>
     where
-        T: num::Unsigned + num::PrimInt,
+        T: num_traits::Unsigned + num_traits::PrimInt,
     {
         if pos >= DNS_PACKET_SIZE {
             return Err(DNSError::EndOfBuffer);
@@ -124,15 +124,28 @@ impl IO for Buffer {
 
 impl IO for ResizableBuffer {
     fn pos(&self) -> usize {
-        self.pos
+        self.pos as usize
     }
 
     fn step(&mut self, steps: usize) -> Result<&mut ResizableBuffer> {
-        if self.pos + steps >= self.buffer.len() {
-            self.buffer.resize(self.buffer.len() << 1, 0);
-        }
+        match self
+            .pos()
+            .checked_add(steps)
+            .map(|v| (v.cmp(&(u16::MAX as usize)), v.cmp(&self.buffer.len())))
+        {
+            Some((
+                std::cmp::Ordering::Less,
+                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal,
+            )) => {
+                self.buffer.resize(self.buffer.len() << 1, 0);
+                self.pos += steps as u16;
+            }
+            Some((std::cmp::Ordering::Less, _)) => {
+                self.pos += steps as u16;
+            }
+            _ => return Err(DNSError::EndOfBuffer),
+        };
 
-        self.pos += steps;
         Ok(self)
     }
 
@@ -140,7 +153,7 @@ impl IO for ResizableBuffer {
         if pos >= self.buffer.len() {
             Err(DNSError::EndOfBuffer)
         } else {
-            self.pos = pos;
+            self.pos = pos as u16;
             Ok(self)
         }
     }
@@ -155,13 +168,30 @@ impl IO for ResizableBuffer {
 
     fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut ResizableBuffer>
     where
-        T: num::Unsigned + num::PrimInt,
+        T: num_traits::Unsigned + num_traits::PrimInt,
     {
         let bytes = std::mem::size_of::<T>();
 
-        if pos >= self.buffer.len() {
-            self.buffer.resize(self.buffer.len() + pos + bytes, 0);
-        }
+        match pos
+            .checked_add(bytes)
+            .map(|v| (v.cmp(&(u16::MAX as usize)), v.cmp(&self.buffer.len())))
+        {
+            Some((
+                std::cmp::Ordering::Less,
+                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal,
+            )) => {
+                self.buffer.resize(
+                    if self.buffer.is_empty() {
+                        pos + bytes
+                    } else {
+                        self.buffer.len() << 1
+                    },
+                    0,
+                );
+            }
+            Some((std::cmp::Ordering::Less, _)) => {}
+            _ => return Err(DNSError::EndOfBuffer),
+        };
 
         if bytes == 1 {
             self.buffer[pos] = val.to_u8().unwrap();
@@ -292,7 +322,7 @@ impl<I: IO> FromBuffer<I> for Packet {
     }
 }
 
-#[allow(unused_imports)]
+#[cfg(test)]
 mod test {
     use std::net::Ipv6Addr;
 

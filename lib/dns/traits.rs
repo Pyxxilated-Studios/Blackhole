@@ -75,7 +75,7 @@ pub trait IO {
     ///
     fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Self>
     where
-        T: num::Unsigned + num::PrimInt;
+        T: num_traits::Unsigned + num_traits::PrimInt;
 
     ///
     /// Get a range of bytes

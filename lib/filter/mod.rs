@@ -5,7 +5,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     str::FromStr,
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
 
 use bstr::{BString, ByteSlice};
@@ -28,7 +28,7 @@ use tracing::{error, info, instrument};
 
 use crate::{config, dns};
 
-static FILTER: LazyLock<Arc<RwLock<Filter>>> = LazyLock::new(Arc::default);
+static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
 
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
@@ -104,11 +104,17 @@ pub enum Error {
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
-    RequestError(#[from] reqwest::Error),
+    RequestError(Box<ureq::Error>),
     #[error("{0}")]
     DownloadError(String),
     #[error("{0}")]
     FilterError(String),
+}
+
+impl From<ureq::Error> for Error {
+    fn from(value: ureq::Error) -> Self {
+        Error::RequestError(Box::new(value))
+    }
 }
 
 fn file_name_for(list: &List) -> String {
@@ -195,7 +201,6 @@ fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
                 opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
             )),
             |(a, b, _)| {
-                println!("'{a}:{b:#?}'");
                 IpAddr::from_str(&format!("{a}{}", b.into_iter().collect::<String>())).unwrap()
             },
         ),
@@ -311,23 +316,17 @@ impl Filter {
         if !Path::new(&file_name_for(&filter)).exists() {
             info!("Fetching {}", filter.url);
 
-            let client = reqwest::Client::builder()
-                .brotli(true)
-                .gzip(true)
-                .build()
-                .unwrap();
+            let response = ureq::get(&filter.url).call()?;
 
-            let response = client.get(&filter.url).send().await?;
-
-            if !response.status().is_success() {
+            if response.status() != 200 {
                 return Err(Error::DownloadError(format!(
                     "{}: {}",
                     response.status(),
-                    response.text().await?
+                    response.into_string()?
                 )));
             }
 
-            let contents = response.text().await?;
+            let contents = response.into_string()?;
 
             std::fs::write(file_name_for(&filter), contents)?;
         }

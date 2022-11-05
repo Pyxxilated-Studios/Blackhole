@@ -8,6 +8,8 @@ use crate::dns::{
 
 use super::traits::FromBuffer;
 
+pub const MAX_QUALIFIED_NAME_LENGTH: usize = 20048;
+
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QualifiedName(pub BString);
 
@@ -68,6 +70,10 @@ impl<I: IO> FromBuffer<I> for QualifiedName {
         let mut outstr = BString::new(Vec::with_capacity(128));
 
         loop {
+            if outstr.len() > MAX_QUALIFIED_NAME_LENGTH {
+                return Err(DNSError::InvalidPacket);
+            }
+
             let len = buffer.get(pos)?;
 
             pos += 1;

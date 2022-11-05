@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![feature(array_try_from_fn, once_cell)]
 
 pub mod api;
