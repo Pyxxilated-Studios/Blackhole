@@ -1,7 +1,4 @@
-use std::{
-    hash::BuildHasherDefault,
-    sync::{Arc, LazyLock},
-};
+use std::{hash::BuildHasherDefault, sync::LazyLock};
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -14,7 +11,7 @@ use crate::{
     filter::Rule,
 };
 
-static STATISTICS: LazyLock<Arc<RwLock<Statistics>>> = LazyLock::new(Arc::default);
+static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
 
 pub const REQUEST: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";
@@ -134,9 +131,7 @@ impl Statistics {
         from: Option<&String>,
         to: Option<&String>,
     ) -> Option<Statistic> {
-        let statistics = STATISTICS.read().await;
-
-        match statistics.statistics.get(statistic) {
+        match &STATISTICS.read().await.statistics.get(statistic) {
             Some(&Statistic::Requests(ref requests)) => {
                 let len = requests.len();
 
@@ -160,7 +155,10 @@ impl Statistics {
 
     #[inline]
     pub async fn statistics() -> FxHashMap<&'static str, Statistic> {
-        let statistics = STATISTICS.read().await;
-        statistics.statistics.clone()
+        STATISTICS.read().await.statistics.clone()
+    }
+
+    pub async fn clear() {
+        STATISTICS.write().await.statistics = FxHashMap::default();
     }
 }

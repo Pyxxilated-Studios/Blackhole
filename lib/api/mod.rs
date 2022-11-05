@@ -52,18 +52,27 @@ impl Server {
     }
 }
 
-#[allow(unused_imports)]
+#[cfg(test)]
 mod test {
-    use reqwest::header::CONTENT_TYPE;
+    use std::sync::LazyLock;
+
+    use tokio::sync::Mutex;
+    use warp::hyper::header::CONTENT_TYPE;
+
+    use crate::statistics::{Statistic, Statistics};
+
+    static WORKER: LazyLock<Mutex<u8>> = LazyLock::new(Mutex::default);
 
     #[tokio::test]
     async fn statistics() {
         let filter = super::api();
 
+        let worker = WORKER.lock().await;
         let response = warp::test::request()
             .path("/api/statistics/requests")
             .reply(&filter)
             .await;
+        drop(worker);
 
         assert_eq!(response.status(), 200);
         assert!(response.headers().contains_key(CONTENT_TYPE));
@@ -78,6 +87,19 @@ mod test {
     async fn all() {
         let filter = super::api();
 
+        let worker = WORKER.lock().await;
+
+        let request = crate::statistics::Request {
+            ..Default::default()
+        };
+        let average = crate::statistics::Average {
+            count: 1,
+            average: 1,
+        };
+
+        Statistics::record(Statistic::Request(request.clone())).await;
+        Statistics::record(Statistic::Average(average.clone())).await;
+
         let response = warp::test::request()
             .path("/api/statistics")
             .reply(&filter)
@@ -89,6 +111,47 @@ mod test {
             response.headers().get(CONTENT_TYPE).unwrap(),
             "application/json"
         );
-        assert_eq!(response.body(), "{}");
+        assert_eq!(
+            response.body(),
+            serde_json::json!(Statistics::statistics().await)
+                .to_string()
+                .as_str()
+        );
+
+        Statistics::clear().await;
+        drop(worker);
+    }
+
+    #[tokio::test]
+    async fn requests() {
+        let filter = super::api();
+
+        let worker = WORKER.lock().await;
+        let request = crate::statistics::Request {
+            ..Default::default()
+        };
+
+        Statistics::record(Statistic::Request(request.clone())).await;
+
+        let response = warp::test::request()
+            .path("/api/statistics/requests")
+            .reply(&filter)
+            .await;
+
+        Statistics::clear().await;
+        drop(worker);
+
+        assert_eq!(response.status(), 200);
+        assert!(response.headers().contains_key(CONTENT_TYPE));
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            response.body(),
+            serde_json::json!({ "Requests": [request] })
+                .to_string()
+                .as_str()
+        );
     }
 }

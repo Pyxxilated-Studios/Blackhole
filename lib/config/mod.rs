@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    fmt::Debug,
-    path::Path,
-    sync::{Arc, LazyLock},
-};
+use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,8 +7,8 @@ use tracing::instrument;
 
 use crate::{filter::List, schedule::Schedule, server::udp::Upstream};
 
-pub static CONFIG: LazyLock<Arc<RwLock<Config>>> = LazyLock::new(Arc::default);
-static CONFIG_FILE: LazyLock<Arc<RwLock<String>>> = LazyLock::new(Arc::default);
+pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
+static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {

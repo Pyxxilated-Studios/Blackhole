@@ -1,6 +1,6 @@
 use core::mem::size_of;
 use std::hash::BuildHasherDefault;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use bstr::BString;
 use chrono::{DateTime, Duration, Utc};
@@ -31,7 +31,7 @@ impl Default for Cache {
     }
 }
 
-static CACHE: LazyLock<Arc<RwLock<Cache>>> = LazyLock::new(Arc::default);
+static CACHE: LazyLock<RwLock<Cache>> = LazyLock::new(RwLock::default);
 
 impl Cache {
     ///
