@@ -136,7 +136,9 @@ impl Server {
 
         let packet = Packet::from_buffer(&mut buffer)?;
         trace!(
-            "DNS request received from {address}: ID: {}",
+            "DNS request received from {}:{}: ID: {}",
+            address.ip().to_canonical(),
+            address.port(),
             packet.header.id
         );
 
@@ -357,7 +359,7 @@ where
 
     async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
         let mut handler = Handler::<I> {
-            client: address.ip().to_string(),
+            client: address.ip().to_canonical().to_string(),
             timestamp: Utc::now(),
             question: packet.questions[0].clone(),
             ..Default::default()

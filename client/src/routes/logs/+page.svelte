@@ -45,7 +45,7 @@
     <title>Blackhole: Query Log</title>
 </svelte:head>
 
-<div class="flex flex-row">
+<div class="flex flex-row px-4">
     <h2 class="basis-5/6">Query Log</h2>
     <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
 </div>

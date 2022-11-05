@@ -12,26 +12,27 @@
             : "";
 </script>
 
-<td>
-    <span class="countdown text-xl">
+<td class="text-xs md:text-sm">
+    <span class="countdown">
         {new Date(request.timestamp).toLocaleTimeString()}
     </span>
-    <p class="text-sm text-accent">
+    <br />
+    <span class="text-accent">
         {new Date(request.timestamp).toLocaleDateString()}
-    </p>
+    </span>
 </td>
-<td class={ruleClass}>
+<td class={`${ruleClass} text-xs md:text-sm`}>
     <div tabindex="-1" class="collapse">
         <div class="collapse-title">
             <span>{request.question.name}</span>
-            <span class="text-sm text-accent">
+            <span class="text-accent">
                 {request.question.qtype}
             </span>
             {#if request.cached}
                 (Cached)
             {/if}
         </div>
-        <div class="collapse-content text-sm text-accent">
+        <div class="collapse-content text-accent">
             <p>{request.status}</p>
             <p>Elapsed: {(request.elapsed / 1000000).toFixed(3)} ms</p>
             {#each Array.from(request.answers) as answer}
@@ -42,4 +43,4 @@
         </div>
     </div>
 </td>
-<td>{request.client}</td>
+<td class="text-xs md:text-sm">{request.client}</td>

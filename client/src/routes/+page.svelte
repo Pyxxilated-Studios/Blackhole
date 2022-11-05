@@ -150,16 +150,15 @@
     <title>Blackhole: Statistics</title>
 </svelte:head>
 
+<div class="flex flex-row px-4">
+    <h2 class="basis-5/6">Statistics:</h2>
+
+    <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
+</div>
 {#if error}
     <p>Error: {error}</p>
 {:else if cache || requests}
-    <div class="flex flex-row">
-        <h2 class="basis-5/6">Statistics:</h2>
-
-        <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
-    </div>
-
-    <div class="stats stats-vertical lg:stats-horizontal w-full">
+    <div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
         {#if cache}
             <div class="stat">
                 <div class="stat-title">Cache Size</div>
@@ -175,7 +174,7 @@
         {/if}
     </div>
 
-    <div class="stats stats-vertical lg:stats-horizontal gap-1 w-full">
+    <div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
         <div class="stat">
             <div class="stat-title">Request Count</div>
             <div class="stat-value">{average?.count}</div>
@@ -189,7 +188,7 @@
             </div>
         </div>
 
-        <div class="stat">
+        <div class="stat flex-1">
             <div class="stat-title">Blocked Requests</div>
             <div class="stat-value">
                 {blockedRequestCount} ({(
@@ -208,20 +207,22 @@
         </div>
     </div>
 
-    <Chart
-        data={{
-            labels: ["Hits", "Misses"],
-            datasets: [
-                {
-                    values: [cache?.hits ?? 0, cache?.misses ?? 0],
-                },
-            ],
-        }}
-        title="Cache Effictiveness"
-        type="pie"
-    />
+    <div class="grid md:grid-cols-2 xs:grid-cols-1">
+        <Chart
+            data={{
+                labels: ["Hits", "Misses"],
+                datasets: [
+                    {
+                        values: [cache?.hits ?? 0, cache?.misses ?? 0],
+                    },
+                ],
+            }}
+            title="Cache Effictiveness"
+            type="pie"
+        />
 
-    <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
+        <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
+    </div>
 {:else}
     <p>Loading ...</p>
 {/if}
