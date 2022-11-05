@@ -14,7 +14,7 @@ use nom::{
     bytes::complete::{tag, take_while, take_while1},
     character::complete::{line_ending, not_line_ending, one_of, space0, space1},
     combinator::{eof, map, opt, peek},
-    error::{context, ContextError, ParseError},
+    error::{context, ContextError, ParseError, VerboseError},
     multi::{count, many_m_n, many_till, separated_list1},
     sequence::{terminated, tuple},
     AsChar, IResult,
@@ -374,8 +374,11 @@ impl Filter {
             .par_bridge()
             .try_fold(
                 || Vec::with_capacity(1024),
-                |mut entries, line| match Self::lex::<()>(&line) {
-                    Err(_) => Err(Error::FilterError(String::from("Invalid filter list"))),
+                |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
+                    Err(e) => {
+                        println!("Errors: {e:#?}");
+                        Err(Error::FilterError(String::from("Invalid filter list")))
+                    }
                     Ok((_, ents)) => {
                         entries.extend(ents.flatten());
                         Ok(entries)
