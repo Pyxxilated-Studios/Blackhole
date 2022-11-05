@@ -5,7 +5,6 @@ use warp::{http::Response, hyper::header::CONTENT_TYPE, Filter};
 
 use crate::statistics::Statistics;
 
-#[derive(Clone)]
 pub struct Server;
 
 fn statistics() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
