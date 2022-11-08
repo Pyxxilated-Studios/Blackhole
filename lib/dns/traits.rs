@@ -33,10 +33,22 @@ pub trait WriteTo<'a, T: IO> {
 }
 
 pub trait IO {
+    fn buffer(&self) -> &[u8];
+
+    fn buffer_mut(&mut self) -> &mut [u8];
+
     ///
     /// Current position within buffer
     ///
     fn pos(&self) -> usize;
+
+    ///
+    /// Grow the internal buffer (if possible)
+    ///
+    /// # Errors
+    /// This will fail if the buffer cannot, or fails to, grow
+    ///
+    fn grow(&mut self) -> Result<&Self>;
 
     ///
     /// Step the buffer position forward a specific number of steps
@@ -45,7 +57,16 @@ pub trait IO {
     /// If the number of steps to take pushes the buffer past the
     /// end of its internal state.
     ///
-    fn step(&mut self, steps: usize) -> Result<&mut Self>;
+    fn step(&mut self, steps: usize) -> Result<&mut Self> {
+        match self
+            .pos()
+            .checked_add(steps)
+            .map(|to| to.cmp(&(u16::MAX as usize)))
+        {
+            Some(core::cmp::Ordering::Less) => self.seek(self.pos() + steps),
+            _ => Err(crate::dns::DNSError::EndOfBuffer),
+        }
+    }
 
     ///
     /// Change the buffer position
@@ -63,7 +84,13 @@ pub trait IO {
     /// If the position is past the end of the buffers internal
     /// state.
     ///
-    fn get(&self, pos: usize) -> Result<u8>;
+    fn get(&self, pos: usize) -> Result<u8> {
+        if pos >= self.buffer().len() {
+            Err(crate::dns::DNSError::EndOfBuffer)
+        } else {
+            Ok(self.buffer()[pos])
+        }
+    }
 
     ///
     /// Set a byte at a specific position
@@ -75,7 +102,37 @@ pub trait IO {
     ///
     fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Self>
     where
-        T: num_traits::Unsigned + num_traits::PrimInt;
+        T: num_traits::Unsigned + num_traits::PrimInt,
+    {
+        let bytes = std::mem::size_of::<T>();
+
+        match pos
+            .checked_add(bytes)
+            .map(|v| (v.cmp(&(u16::MAX as usize)), v.cmp(&self.buffer().len())))
+        {
+            Some((
+                std::cmp::Ordering::Less,
+                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal,
+            )) => {
+                self.grow()?;
+            }
+            Some((std::cmp::Ordering::Less, std::cmp::Ordering::Less)) => {}
+            _ => return Err(crate::dns::DNSError::EndOfBuffer),
+        };
+
+        if bytes == 1 {
+            self.buffer_mut()[pos] = val.to_u8().unwrap();
+        } else {
+            for byte in 1..=bytes {
+                self.buffer_mut()[pos + byte - 1] = (val >> ((bytes - byte) * u8::BITS as usize)
+                    & T::from(0xFF).unwrap())
+                .to_u8()
+                .unwrap();
+            }
+        }
+
+        Ok(self)
+    }
 
     ///
     /// Get a range of bytes
@@ -84,7 +141,13 @@ pub trait IO {
     /// If the number of elements wanted causes the buffer to read
     /// past its internal state.
     ///
-    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]>;
+    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]> {
+        if start + len >= self.buffer().len() {
+            Err(crate::dns::DNSError::EndOfBuffer)
+        } else {
+            Ok(&self.buffer()[start..start + len])
+        }
+    }
 
     ///
     /// Read a range of bytes
@@ -93,7 +156,10 @@ pub trait IO {
     /// If the number of elements wanted causes the buffer to read
     /// past its internal state.
     ///
-    fn read_range(&mut self, len: usize) -> Result<&[u8]>;
+    fn read_range(&mut self, len: usize) -> Result<&[u8]> {
+        self.step(len)?;
+        self.get_range(self.pos() - len, len)
+    }
 
     ///
     /// Read out an element from the buffer
@@ -105,7 +171,10 @@ pub trait IO {
     fn read<T>(&'_ mut self) -> Result<T>
     where
         T: FromBuffer<Self> + Default,
-        Self: Sized;
+        Self: Sized,
+    {
+        T::from_buffer(self)
+    }
 
     ///
     /// Write an element into the buffer
@@ -117,7 +186,10 @@ pub trait IO {
     fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
     where
         Self: Sized,
-        T: WriteTo<'a, Self, Out = Self> + Debug;
+        T: WriteTo<'a, Self, Out = Self> + Debug,
+    {
+        val.write_to(self)
+    }
 }
 
 macro_rules! impl_write {
