@@ -1,11 +1,6 @@
 use std::convert::TryFrom;
 
-use crate::dns::{
-    header::Header,
-    question::Question,
-    traits::{WriteTo, IO},
-    DNSError, Record, Result,
-};
+use crate::dns::{header::Header, question::Question, traits::IO, DNSError, Record, Result};
 
 use super::traits::FromBuffer;
 
@@ -20,41 +15,33 @@ pub struct Buffer {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResizableBuffer {
     pub buffer: Vec<u8>,
-    pub pos: u16,
+    pub pos: usize,
 }
 
 impl Default for ResizableBuffer {
     fn default() -> Self {
+        let mut buffer = vec![0; DNS_PACKET_SIZE];
+        buffer.reserve(DNS_PACKET_SIZE << 2);
         Self {
-            buffer: Vec::with_capacity(DNS_PACKET_SIZE * 2),
+            buffer,
             pos: Default::default(),
         }
     }
 }
 
-impl Buffer {
-    #[inline]
-    pub(crate) fn buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer
-    }
-}
-
 impl IO for Buffer {
+    #[inline]
     fn pos(&self) -> usize {
         self.pos
     }
 
-    fn step(&mut self, steps: usize) -> Result<&mut Buffer> {
-        if self.pos + steps >= DNS_PACKET_SIZE {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            self.pos += steps;
-            Ok(self)
-        }
+    #[inline]
+    fn grow(&mut self) -> Result<&Self> {
+        Err(DNSError::EndOfBuffer)
     }
 
     fn seek(&mut self, pos: usize) -> Result<&mut Buffer> {
-        if pos >= DNS_PACKET_SIZE {
+        if pos >= self.buffer().len() {
             Err(DNSError::EndOfBuffer)
         } else {
             self.pos = pos;
@@ -62,176 +49,53 @@ impl IO for Buffer {
         }
     }
 
-    fn get(&self, pos: usize) -> Result<u8> {
-        if pos >= DNS_PACKET_SIZE {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            Ok(self.buffer[pos])
-        }
+    #[inline]
+    fn buffer(&self) -> &[u8] {
+        &self.buffer
     }
 
-    fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut Buffer>
-    where
-        T: num_traits::Unsigned + num_traits::PrimInt,
-    {
-        if pos >= DNS_PACKET_SIZE {
-            return Err(DNSError::EndOfBuffer);
-        }
-
-        let bytes = std::mem::size_of::<T>();
-
-        if bytes == 1 {
-            self.buffer[pos] = val.to_u8().unwrap();
-        } else {
-            (1..=bytes).for_each(|byte| {
-                self.buffer[pos + byte - 1] = (val >> ((bytes - byte) * u8::BITS as usize)
-                    & T::from(0xFF).unwrap())
-                .to_u8()
-                .unwrap();
-            });
-        }
-
-        Ok(self)
-    }
-
-    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]> {
-        if start + len >= DNS_PACKET_SIZE {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            Ok(&self.buffer[start..start + len])
-        }
-    }
-
-    fn read_range(&mut self, len: usize) -> Result<&[u8]> {
-        self.step(len)?;
-        self.get_range(self.pos() - len, len)
-    }
-
-    fn read<T>(&'_ mut self) -> Result<T>
-    where
-        T: FromBuffer<Self> + Default,
-    {
-        T::from_buffer(self)
-    }
-
-    fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
-    where
-        T: WriteTo<'a, Self, Out = Self>,
-    {
-        val.write_to(self)
+    #[inline]
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer
     }
 }
 
 impl IO for ResizableBuffer {
+    #[inline]
     fn pos(&self) -> usize {
-        self.pos as usize
+        self.pos
     }
 
-    fn step(&mut self, steps: usize) -> Result<&mut ResizableBuffer> {
-        match self
-            .pos()
-            .checked_add(steps)
-            .map(|v| (v.cmp(&(u16::MAX as usize)), v.cmp(&self.buffer.len())))
-        {
-            Some((
-                std::cmp::Ordering::Less,
-                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal,
-            )) => {
-                self.buffer.resize(self.buffer.len() << 1, 0);
-                self.pos += steps as u16;
-            }
-            Some((std::cmp::Ordering::Less, _)) => {
-                self.pos += steps as u16;
-            }
-            _ => return Err(DNSError::EndOfBuffer),
-        };
-
+    #[inline]
+    fn grow(&mut self) -> Result<&Self> {
+        self.buffer.resize(
+            if self.buffer().is_empty() {
+                DNS_PACKET_SIZE
+            } else {
+                self.buffer().len() << 1
+            },
+            0,
+        );
         Ok(self)
     }
 
     fn seek(&mut self, pos: usize) -> Result<&mut ResizableBuffer> {
         if pos >= self.buffer.len() {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            self.pos = pos as u16;
-            Ok(self)
-        }
-    }
-
-    fn get(&self, pos: usize) -> Result<u8> {
-        if pos >= self.buffer.len() {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            Ok(self.buffer[pos])
-        }
-    }
-
-    fn set<T>(&mut self, pos: usize, val: T) -> Result<&mut ResizableBuffer>
-    where
-        T: num_traits::Unsigned + num_traits::PrimInt,
-    {
-        let bytes = std::mem::size_of::<T>();
-
-        match pos
-            .checked_add(bytes)
-            .map(|v| (v.cmp(&(u16::MAX as usize)), v.cmp(&self.buffer.len())))
-        {
-            Some((
-                std::cmp::Ordering::Less,
-                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal,
-            )) => {
-                self.buffer.resize(
-                    if self.buffer.is_empty() {
-                        pos + bytes
-                    } else {
-                        self.buffer.len() << 1
-                    },
-                    0,
-                );
-            }
-            Some((std::cmp::Ordering::Less, _)) => {}
-            _ => return Err(DNSError::EndOfBuffer),
-        };
-
-        if bytes == 1 {
-            self.buffer[pos] = val.to_u8().unwrap();
-        } else {
-            (1..=bytes).for_each(|byte| {
-                self.buffer[pos + byte - 1] = (val >> ((bytes - byte) * u8::BITS as usize)
-                    & T::from(0xFF).unwrap())
-                .to_u8()
-                .unwrap();
-            });
+            self.grow()?;
         }
 
+        self.pos = pos;
         Ok(self)
     }
 
-    fn get_range(&self, start: usize, len: usize) -> Result<&[u8]> {
-        if start + len >= self.buffer.len() {
-            Err(DNSError::EndOfBuffer)
-        } else {
-            Ok(&self.buffer[start..start + len])
-        }
+    #[inline]
+    fn buffer(&self) -> &[u8] {
+        &self.buffer
     }
 
-    fn read_range(&mut self, len: usize) -> Result<&[u8]> {
-        self.step(len)?;
-        self.get_range(self.pos() - len, len)
-    }
-
-    fn read<T>(&'_ mut self) -> Result<T>
-    where
-        T: FromBuffer<Self> + Default,
-    {
-        T::from_buffer(self)
-    }
-
-    fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
-    where
-        T: WriteTo<'a, Self, Out = Self>,
-    {
-        val.write_to(self)
+    #[inline]
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer
     }
 }
 
