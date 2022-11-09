@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock};
+use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock, time::Duration};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -10,9 +10,9 @@ use crate::{filter::List, schedule::Schedule, server::Upstream};
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
 static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
 
-fn keep_logs_default() -> u64 {
+fn keep_logs_default() -> Duration {
     // 6 Hours
-    60 * 60 * 6
+    Duration::from_secs(60 * 60 * 6)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,8 +23,8 @@ pub struct Config {
     pub filters: Vec<List>,
     #[serde(alias = "schedule", rename(serialize = "schedule"))]
     pub schedules: Vec<Schedule>,
-    #[serde(default = "keep_logs_default")]
-    pub keep_logs: u64,
+    #[serde(with = "humantime_serde", default = "keep_logs_default")]
+    pub keep_logs: Duration,
 }
 
 impl Default for Config {
