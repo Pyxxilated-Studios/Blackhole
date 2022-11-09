@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#![feature(array_try_from_fn, ip, once_cell)]
+#![feature(array_try_from_fn, ip, once_cell, option_get_or_insert_default)]
 
 pub mod api;
 pub mod cache;

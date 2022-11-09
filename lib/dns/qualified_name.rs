@@ -41,7 +41,7 @@ impl<'a, T: IO> WriteTo<'a, T> for QualifiedName {
                 .try_fold(out, |buffer, label| {
                     let len = label.len();
                     if len > 0x3f {
-                        Err(DNSError::EndOfBuffer)
+                        Err(DNSError::InvalidPacket)
                     } else {
                         buffer.write(len as u8)?.write(label.as_bytes())
                     }

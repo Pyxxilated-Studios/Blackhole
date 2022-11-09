@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible};
+use std::{collections::HashMap, convert::Infallible, net::Ipv6Addr};
 
 use serde_json::json;
 use warp::{http::Response, hyper::header::CONTENT_TYPE, Filter};
@@ -24,7 +24,7 @@ fn api() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> 
 
 impl Server {
     pub async fn run(self) {
-        warp::serve(api()).run(([0, 0, 0, 0], 5000)).await;
+        warp::serve(api()).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
     }
 
     async fn all() -> Result<impl warp::Reply, Infallible> {
@@ -41,9 +41,9 @@ impl Server {
         let to = params.get("to");
 
         match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to).await {
-            Some(requests) => Ok(Response::builder()
+            Some(statistics) => Ok(Response::builder()
                 .header(CONTENT_TYPE, "application/json")
-                .body(json!(requests).to_string())),
+                .body(json!(statistics).to_string())),
             None => Ok(Response::builder()
                 .header(CONTENT_TYPE, "application/json")
                 .body(String::from("{}"))),
@@ -53,6 +53,8 @@ impl Server {
 
 #[cfg(test)]
 mod test {
+    use pretty_assertions::assert_eq;
+
     use std::sync::LazyLock;
 
     use tokio::sync::Mutex;
@@ -60,7 +62,7 @@ mod test {
 
     use crate::statistics::{Statistic, Statistics};
 
-    static WORKER: LazyLock<Mutex<u8>> = LazyLock::new(Mutex::default);
+    static WORKER: LazyLock<Mutex<bool>> = LazyLock::new(Mutex::default);
 
     #[tokio::test]
     async fn statistics() {

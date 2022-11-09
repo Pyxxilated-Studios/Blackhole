@@ -4,16 +4,17 @@ use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use tokio::sync::RwLock;
+use tracing::{instrument, log::trace};
 
 use crate::{
     dns::Record as Answer,
     dns::{question::Question, ResultCode},
-    filter::Rule,
+    filter::rules::Rule,
 };
 
 static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
 
-pub const REQUEST: &str = "requests";
+pub const REQUESTS: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
 
@@ -55,14 +56,14 @@ impl Statistic {
                 }
             }
             Statistic::Request(request) => match stats
-                .entry(REQUEST)
+                .entry(REQUESTS)
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => r.push(request),
                 _ => unreachable!(),
             },
             Statistic::Requests(requests) => match stats
-                .entry(REQUEST)
+                .entry(REQUESTS)
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => r.extend(requests.into_iter()),
@@ -125,12 +126,14 @@ impl Statistics {
         value.record(&mut statistics.statistics);
     }
 
-    #[inline]
+    #[instrument]
     pub async fn retrieve(
         statistic: &str,
         from: Option<&String>,
         to: Option<&String>,
     ) -> Option<Statistic> {
+        trace!("Retrieving {statistic}: {from:?} -- {to:?}");
+
         match &STATISTICS.read().await.statistics.get(statistic) {
             Some(&Statistic::Requests(ref requests)) => {
                 let len = requests.len();
@@ -158,7 +161,21 @@ impl Statistics {
         STATISTICS.read().await.statistics.clone()
     }
 
+    #[inline]
     pub async fn clear() {
         STATISTICS.write().await.statistics = FxHashMap::default();
+    }
+
+    pub async fn modify<F>(statistic: &str, f: F)
+    where
+        F: FnOnce(&mut Statistic),
+    {
+        STATISTICS
+            .write()
+            .await
+            .statistics
+            .get_mut(statistic)
+            .map(f)
+            .unwrap_or_default();
     }
 }

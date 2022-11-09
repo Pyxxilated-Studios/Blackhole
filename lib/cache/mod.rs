@@ -84,7 +84,15 @@ impl Cache {
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
             misses: 1,
-            size: key.capacity() + size_of::<Entry>() + DNS_PACKET_SIZE,
+            size: match cache
+                .cache
+                .get(&key)
+                .map(|inner| inner.contains_key(&sub_key))
+            {
+                Some(true) => 0,
+                Some(false) => size_of::<Entry>() + DNS_PACKET_SIZE,
+                None => key.capacity() + size_of::<Entry>() + DNS_PACKET_SIZE,
+            },
         }))
         .await;
 
