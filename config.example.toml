@@ -1,4 +1,4 @@
-keep_logs = 21600
+keep_logs = "6 hours"
 
 [[upstream]]
 ip = "9.9.9.9"
@@ -10,8 +10,8 @@ url = "https://block.energized.pro/spark/formats/hosts"
 
 [[schedule]]
 name = "Filters"
-schedule = 21600
+schedule = "6 hours"
 
 [[schedule]]
 name = "Logs"
-schedule = 21600
+schedule = "6 hours"

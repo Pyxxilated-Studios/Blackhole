@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, sync::LazyLock, time::Duration};
+use std::{sync::LazyLock, time::Duration};
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -28,9 +28,8 @@ impl Sched {
             }
             Sched::Logs => {
                 let now = chrono::Utc::now()
-                    - chrono::Duration::seconds(
-                        Config::get(|config| config.keep_logs).await as i64,
-                    );
+                    - chrono::Duration::from_std(Config::get(|config| config.keep_logs).await)
+                        .unwrap();
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {
@@ -55,12 +54,13 @@ impl Sched {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Schedule {
     name: Sched,
-    schedule: NonZeroU64,
+    #[serde(with = "humantime_serde", default)]
+    schedule: Duration,
 }
 
 #[derive(Default)]
 pub struct Scheduler {
-    schedules: FxHashMap<Sched, (DateTime<Utc>, NonZeroU64)>,
+    schedules: FxHashMap<Sched, (DateTime<Utc>, Duration)>,
 }
 
 impl Scheduler {
@@ -110,16 +110,12 @@ impl Scheduler {
             .schedules
             .entry(schedule.name)
             .and_modify(|(when, sched)| {
-                *when = Utc::now()
-                    + chrono::Duration::from_std(Duration::from_secs(schedule.schedule.into()))
-                        .unwrap();
+                *when = Utc::now() + chrono::Duration::from_std(schedule.schedule).unwrap();
                 *sched = schedule.schedule;
             })
             .or_insert_with(|| {
                 (
-                    Utc::now()
-                        + chrono::Duration::from_std(Duration::from_secs(schedule.schedule.into()))
-                            .unwrap(),
+                    Utc::now() + chrono::Duration::from_std(schedule.schedule).unwrap(),
                     schedule.schedule,
                 )
             })
