@@ -1,8 +1,11 @@
 use std::convert::TryFrom;
 
-use crate::dns::{header::Header, question::Question, traits::IO, DNSError, Record, Result};
-
-use super::traits::FromBuffer;
+use crate::dns::{
+    header::Header,
+    question::Question,
+    traits::{FromBuffer, IO},
+    DNSError, Record, Result,
+};
 
 pub(crate) const DNS_PACKET_SIZE: usize = 512;
 
@@ -10,6 +13,16 @@ pub(crate) const DNS_PACKET_SIZE: usize = 512;
 pub struct Buffer {
     pub buffer: [u8; DNS_PACKET_SIZE],
     pub pos: usize,
+}
+
+impl Default for Buffer {
+    #[inline]
+    fn default() -> Self {
+        Buffer {
+            buffer: [0; DNS_PACKET_SIZE],
+            pos: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,6 +53,7 @@ impl IO for Buffer {
         Err(DNSError::EndOfBuffer)
     }
 
+    #[inline]
     fn seek(&mut self, pos: usize) -> Result<&mut Buffer> {
         if pos >= self.buffer().len() {
             Err(DNSError::EndOfBuffer)
@@ -79,6 +93,7 @@ impl IO for ResizableBuffer {
         Ok(self)
     }
 
+    #[inline]
     fn seek(&mut self, pos: usize) -> Result<&mut ResizableBuffer> {
         if pos >= self.buffer.len() {
             self.grow()?;
@@ -99,53 +114,30 @@ impl IO for ResizableBuffer {
     }
 }
 
-impl TryFrom<Packet> for Buffer {
-    type Error = DNSError;
+macro_rules! impl_try_from {
+    ($($t:ty),*) => {
+        $(impl TryFrom<Packet> for $t {
+            type Error = DNSError;
 
-    fn try_from(mut packet: Packet) -> Result<Self> {
-        packet.header.questions = packet.questions.len() as u16;
-        packet.header.answers = packet.answers.len() as u16;
-        packet.header.authoritative_entries = packet.authorities.len() as u16;
-        packet.header.resource_entries = packet.resources.len() as u16;
+            fn try_from(mut packet: Packet) -> Result<Self> {
+                packet.header.questions = packet.questions.len() as u16;
+                packet.header.answers = packet.answers.len() as u16;
+                packet.header.authoritative_entries = packet.authorities.len() as u16;
+                packet.header.resource_entries = packet.resources.len() as u16;
 
-        Buffer::default()
-            .write(packet.header)?
-            .write(packet.questions)?
-            .write(packet.answers)?
-            .write(packet.authorities)?
-            .write(packet.resources)
-            .cloned()
-    }
+                <$t>::default()
+                    .write(packet.header)?
+                    .write(packet.questions)?
+                    .write(packet.answers)?
+                    .write(packet.authorities)?
+                    .write(packet.resources)
+                    .cloned()
+            }
+        })*
+    };
 }
 
-impl TryFrom<Packet> for ResizableBuffer {
-    type Error = DNSError;
-
-    fn try_from(mut packet: Packet) -> Result<Self> {
-        packet.header.questions = packet.questions.len() as u16;
-        packet.header.answers = packet.answers.len() as u16;
-        packet.header.authoritative_entries = packet.authorities.len() as u16;
-        packet.header.resource_entries = packet.resources.len() as u16;
-
-        ResizableBuffer::default()
-            .write(packet.header)?
-            .write(packet.questions)?
-            .write(packet.answers)?
-            .write(packet.authorities)?
-            .write(packet.resources)
-            .cloned()
-    }
-}
-
-impl Default for Buffer {
-    #[inline]
-    fn default() -> Self {
-        Buffer {
-            buffer: [0; DNS_PACKET_SIZE],
-            pos: 0,
-        }
-    }
-}
+impl_try_from!(Buffer, ResizableBuffer);
 
 #[derive(Clone, Debug, Default)]
 pub struct Packet {
@@ -188,6 +180,8 @@ impl<I: IO> FromBuffer<I> for Packet {
 
 #[cfg(test)]
 mod test {
+    use pretty_assertions::assert_eq;
+
     use std::net::Ipv6Addr;
 
     use crate::dns::{

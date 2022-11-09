@@ -158,7 +158,7 @@ pub trait IO {
     ///
     fn read_range(&mut self, len: usize) -> Result<&[u8]> {
         self.step(len)?;
-        self.get_range(self.pos() - len, len)
+        Ok(&self.buffer()[self.pos() - len..self.pos()])
     }
 
     ///

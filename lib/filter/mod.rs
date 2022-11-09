@@ -1,26 +1,14 @@
+pub mod rules;
+
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    io::{BufRead, BufReader},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
-    str::FromStr,
     sync::LazyLock,
 };
 
-use bstr::{BString, ByteSlice};
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_while, take_while1},
-    character::complete::{line_ending, not_line_ending, one_of, space0, space1},
-    combinator::{eof, map, opt, peek},
-    error::{context, ContextError, ParseError, VerboseError},
-    multi::{count, many_m_n, many_till, separated_list1},
-    sequence::{terminated, tuple},
-    AsChar, IResult,
-};
-use rayon::iter::{ParallelBridge, ParallelIterator};
-use rustc_hash::{FxHashMap, FxHashSet};
+use bstr::ByteSlice;
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -28,9 +16,9 @@ use tracing::{error, info, instrument};
 
 use crate::{config, dns};
 
-static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
+use self::rules::{Rule, Rules};
 
-const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
+static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
 
 #[derive(Clone, Debug, Eq, Serialize, Deserialize)]
 pub struct List {
@@ -38,6 +26,14 @@ pub struct List {
     pub url: String,
     #[serde(skip)]
     pub entries: usize,
+}
+
+impl ToString for List {
+    fn to_string(&self) -> String {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        format!("{}.txt", hasher.finish())
+    }
 }
 
 impl PartialEq for List {
@@ -53,50 +49,10 @@ impl std::hash::Hash for List {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, PartialOrd)]
-pub struct Rewrite {
-    pub v4: IpAddr,
-    pub v6: IpAddr,
-}
-
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
-pub(crate) struct Action {
-    pub rewrite: Option<Rewrite>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
-pub enum Kind {
-    Allow,
-    Deny,
-    #[default]
-    None,
-}
-
-#[derive(Debug, Clone)]
-pub enum Type {
-    Host(IpAddr, String),
-    Domain(String),
-    Adblock(Kind, Box<Type>),
-    Ip(IpAddr),
-}
-
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
-pub struct Rule {
-    pub(crate) domain: String,
-    pub(crate) ty: Kind,
-    pub(crate) action: Option<Action>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct Rules {
-    pub(crate) children: FxHashMap<BString, Rules>,
-    pub(crate) rule: Option<Rule>,
-}
-
 #[derive(Default, Debug)]
 pub struct Filter {
-    pub(crate) lists: FxHashSet<List>,
-    pub(crate) rules: Rules,
+    pub lists: FxHashSet<List>,
+    pub rules: rules::Rules,
 }
 
 #[derive(Debug, Error)]
@@ -117,182 +73,14 @@ impl From<ureq::Error> for Error {
     }
 }
 
-fn file_name_for(list: &List) -> String {
-    let mut hasher = DefaultHasher::new();
-    list.hash(&mut hasher);
-    format!("{}.txt", hasher.finish())
-}
-
-fn ip4_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IP4_Num",
-        alt((
-            map(
-                tuple((tag("1"), one_of("0123456789"), one_of("0123456789"))),
-                |(a, b, c)| format!("{a}{b}{c}"),
-            ),
-            map(
-                tuple((
-                    tag("2"),
-                    alt((
-                        map(tuple((tag("5"), one_of("012345"))), |(a, b)| {
-                            format!("{a}{b}")
-                        }),
-                        map(tuple((one_of("01234"), one_of("0123456789"))), |(a, b)| {
-                            format!("{a}{b}")
-                        }),
-                    )),
-                )),
-                |(_, b)| format!("2{b}"),
-            ),
-            map(
-                tuple((one_of("123456789"), one_of("0123456789"))),
-                |(a, b)| format!("{a}{b}"),
-            ),
-            map(one_of("0123456789"), |a| format!("{a}")),
-        )),
-    )(i)
-}
-
-fn ipv4<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
-    context(
-        "IPV4",
-        map(
-            tuple((count(terminated(ip4_num, tag(".")), 3), ip4_num)),
-            |(a, b)| IpAddr::from_str(&format!("{}.{b}", a.join("."))).unwrap(),
-        ),
-    )(i)
-}
-
-fn ip6_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, Vec<char>, E> {
-    context("IP6_Num", many_m_n(1, 4, one_of("0123456789abcdefABCDEF")))(i)
-}
-
-fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
-    context(
-        "IPV6",
-        map(
-            tuple((
-                alt((
-                    map(tuple((opt(ip6_num), tag("::"))), |(a, b)| {
-                        format!("{}{b}", a.into_iter().flatten().collect::<String>())
-                    }),
-                    map(count(terminated(ip6_num, tag(":")), 7), |parts| {
-                        parts
-                            .into_iter()
-                            .map(|v| v.into_iter().collect::<String>())
-                            .reduce(|mut acc, e| {
-                                acc.push(':');
-                                acc.push_str(&e);
-                                acc
-                            })
-                            .unwrap()
-                    }),
-                )),
-                ip6_num,
-                opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
-            )),
-            |(a, b, _)| {
-                IpAddr::from_str(&format!("{a}{}", b.into_iter().collect::<String>())).unwrap()
-            },
-        ),
-    )(i)
-}
-
-fn ip<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
-    context(
-        "IP",
-        map(
-            tuple((alt((ipv4, ipv6)), peek(alt((space1, eol, eof))))),
-            |(ip, _)| ip,
-        ),
-    )(i)
-}
-
-fn domain<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "Domain",
-        map(
-            separated_list1(
-                tag("."),
-                take_while1(|c| DOMAIN_CHARS.chars().any(|a| a == c)),
-            ),
-            |parts| parts.join("."),
-        ),
-    )(i)
-}
-
-fn hosts<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, Type, E> {
-    context(
-        "Hosts",
-        map(tuple((ip, space1, domain)), |(ip, _, domain)| {
-            Type::Host(ip, domain)
-        }),
-    )(i)
-}
-
-fn adblock<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, Type, E> {
-    context(
-        "Adblock",
-        map(
-            tuple((
-                alt((tag("||@@"), tag("@@||"), tag("||"))),
-                alt((map(ip, Type::Ip), map(domain, Type::Domain))),
-            )),
-            |(pre, ty)| {
-                Type::Adblock(
-                    if pre.chars().any(|c| c == '@') {
-                        Kind::Allow
-                    } else {
-                        Kind::Deny
-                    },
-                    Box::new(ty),
-                )
-            },
-        ),
-    )(i)
-}
-
-fn comment<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, &'a str, E> {
-    context(
-        "Comment",
-        map(tuple((one_of("#!"), not_line_ending)), |(_, comment)| {
-            comment
-        }),
-    )(i)
-}
-
-fn eol<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, &str, E> {
-    context(
-        "EOL",
-        map(
-            tuple((space0, opt(comment), alt((eof, line_ending)))),
-            |(_, _, _)| "",
-        ),
-    )(i)
-}
-
 impl Filter {
+    pub async fn init() {
+        Self::update().await;
+        if let Err(err) = Self::import().await {
+            error!("{err:#?}");
+        }
+    }
+
     #[instrument(level = "info")]
     pub async fn update() {
         let tasks = config::Config::get(|config| config.filters.clone())
@@ -312,11 +100,11 @@ impl Filter {
         }
     }
 
-    async fn download(filter: List) -> Result<(), Error> {
-        if !Path::new(&file_name_for(&filter)).exists() {
-            info!("Fetching {}", filter.url);
+    async fn download(list: List) -> Result<(), Error> {
+        if !Path::new(&list.to_string()).exists() {
+            info!("Fetching {}", list.url);
 
-            let response = ureq::get(&filter.url).call()?;
+            let response = ureq::get(&list.url).call()?;
 
             if response.status() != 200 {
                 return Err(Error::DownloadError(format!(
@@ -328,136 +116,13 @@ impl Filter {
 
             let contents = response.into_string()?;
 
-            std::fs::write(file_name_for(&filter), contents)?;
+            std::fs::write(list.to_string(), contents)?;
         }
 
-        Self::import(filter).await
-    }
+        let mut filter = FILTER.write().await;
+        filter.lists.insert(list);
 
-    fn lex<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        i: &'a str,
-    ) -> IResult<&'a str, impl Iterator<Item = Option<Type>> + 'a, E> {
-        context(
-            "Lex",
-            map(
-                many_till(
-                    tuple((
-                        space0,
-                        opt(alt((
-                            hosts,
-                            map(ip, Type::Ip),
-                            map(domain, Type::Domain),
-                            adblock,
-                        ))),
-                        eol,
-                    )),
-                    eof,
-                ),
-                |(a, _)| a.into_iter().map(|(_, b, _)| b),
-            ),
-        )(i)
-    }
-
-    ///
-    /// Parse a filter list into a bunch of individual filters
-    ///
-    /// # Errors
-    /// This will only fail if the lexer fails (i.e. the filter list is invalid)
-    ///
-    pub fn parse(file: &Path) -> Result<Vec<Type>, Error> {
-        let file = std::fs::File::open(file)?;
-        let reader = BufReader::new(file);
-
-        reader
-            .lines()
-            .filter_map(Result::ok)
-            .par_bridge()
-            .try_fold(
-                || Vec::with_capacity(1024),
-                |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
-                    Err(e) => {
-                        println!("Errors: {e:#?}");
-                        Err(Error::FilterError(String::from("Invalid filter list")))
-                    }
-                    Ok((_, ents)) => {
-                        entries.extend(ents.flatten());
-                        Ok(entries)
-                    }
-                },
-            )
-            .try_reduce(
-                || Vec::with_capacity(1024),
-                |mut entries, entry| {
-                    entries.extend(entry);
-                    Ok(entries)
-                },
-            )
-    }
-
-    fn add(&mut self, entry: Type) {
-        let (addr, ty, domain) = match entry {
-            Type::Host(ip, domain) => (Some(ip), Kind::Deny, domain),
-            Type::Domain(domain) => (None, Kind::Deny, domain),
-            Type::Adblock(kind, ty) => match *ty {
-                Type::Domain(domain) => (None, kind, domain),
-                Type::Ip(_) | Type::Host(_, _) | Type::Adblock(_, _) => return,
-            },
-            Type::Ip(_) => return,
-        };
-
-        let mut inserted = false;
-
-        let rule = domain
-            .split('.')
-            .rev()
-            .fold(&mut self.rules, |current_node, part| {
-                current_node.children.entry(part.into()).or_default()
-            })
-            .rule
-            .get_or_insert_with(|| {
-                inserted = true;
-                Rule {
-                    domain,
-                    ty,
-                    action: match addr {
-                        None => None,
-                        Some(addr @ IpAddr::V4(_)) => Some(Action {
-                            rewrite: Some(Rewrite {
-                                v4: addr,
-                                v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                            }),
-                        }),
-                        Some(addr @ IpAddr::V6(_)) => Some(Action {
-                            rewrite: Some(Rewrite {
-                                v6: addr,
-                                v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                            }),
-                        }),
-                    },
-                }
-            });
-
-        if inserted {
-            return;
-        }
-
-        if let Some(ref mut action) = rule.action {
-            if let Some(ref mut rewrite) = action.rewrite {
-                match addr {
-                    None => (),
-                    Some(addr @ IpAddr::V4(_)) => rewrite.v4 = addr,
-                    Some(addr @ IpAddr::V6(_)) => rewrite.v6 = addr,
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub fn insert(&mut self, entries: Vec<Type>) -> usize {
-        entries.into_iter().fold(0, |acc, entry| {
-            self.add(entry);
-            acc + 1
-        })
+        Ok(())
     }
 
     ///
@@ -466,18 +131,28 @@ impl Filter {
     /// # Errors
     /// If it fails to open the list
     ///
-    #[instrument(skip(list), err)]
-    pub async fn import(mut list: List) -> Result<(), Error> {
-        info!("loading filter list: {}", list.name);
+    #[instrument(err)]
+    pub async fn import() -> Result<(), Error> {
+        let rules = {
+            let filter = FILTER.read().await;
 
-        let file = file_name_for(&list);
+            filter
+                .lists
+                .iter()
+                .cloned()
+                .try_fold(Rules::default(), |mut rules, mut list| {
+                    info!("loading filter list: {}", list.name);
 
-        let entries = Self::parse(Path::new(&file))?;
+                    rules.merge(Rules::try_from(&mut list)?);
+
+                    info!("Loaded {} filter(s) for {}", list.entries, list.name);
+
+                    Ok::<Rules, Error>(rules)
+                })?
+        };
 
         let mut filter = FILTER.write().await;
-        list.entries = filter.insert(entries);
-        info!("Loaded {} filter(s) for {}", list.entries, list.name);
-        filter.lists.insert(list);
+        filter.rules = rules;
 
         Ok(())
     }
@@ -487,14 +162,13 @@ impl Filter {
     /// when removing filters
     ///
     pub async fn reset() {
-        let lists = {
-            let mut filter = FILTER.write().await;
-            filter.rules = Rules::default();
-            filter.lists.clone()
-        };
+        FILTER.read().await.lists.iter().for_each(|list| {
+            std::fs::remove_file(list.to_string()).unwrap_or_default();
+        });
 
-        for list in lists {
-            std::fs::remove_file(file_name_for(&list)).unwrap_or_default();
+        Self::update().await;
+        if let Err(err) = Self::import().await {
+            error!("{err:#?}");
         }
     }
 
@@ -525,6 +199,8 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use std::path::Path;
 
     use crate::{
@@ -532,7 +208,7 @@ mod tests {
             header::Header, packet::Packet, qualified_name::QualifiedName, question::Question,
             QueryType, ResultCode,
         },
-        filter::Kind,
+        filter::rules::{Kind, Rules},
     };
 
     use super::Filter;
@@ -541,11 +217,11 @@ mod tests {
     fn parsing() {
         let mut filter = Filter::default();
 
-        let entries = Filter::parse(Path::new("benches/test.txt"));
+        let entries = Rules::parse(Path::new("benches/test.txt"));
         assert!(entries.is_ok());
 
         let entries = entries.unwrap();
-        assert_eq!(filter.insert(entries), 81560);
+        assert_eq!(filter.rules.insert(entries), 81560);
     }
 
     #[test]
@@ -579,8 +255,8 @@ mod tests {
             resources: vec![],
         };
 
-        let entries = Filter::parse(Path::new("benches/test.txt")).unwrap();
-        filter.insert(entries);
+        let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
+        filter.rules.insert(entries);
 
         let rule = filter.filter(&packet);
         assert!(rule.is_some());

@@ -5,19 +5,37 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::instrument;
 
-use crate::{filter::List, schedule::Schedule, server::udp::Upstream};
+use crate::{filter::List, schedule::Schedule, server::Upstream};
 
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
 static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+fn keep_logs_default() -> u64 {
+    // 6 Hours
+    60 * 60 * 6
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
-    #[serde(alias = "filter", rename(serialize = "filter"), default)]
+    #[serde(alias = "filter", rename(serialize = "filter"))]
     pub filters: Vec<List>,
-    #[serde(alias = "schedule", rename(serialize = "schedule"), default)]
+    #[serde(alias = "schedule", rename(serialize = "schedule"))]
     pub schedules: Vec<Schedule>,
+    #[serde(default = "keep_logs_default")]
+    pub keep_logs: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            upstreams: HashSet::default(),
+            filters: Vec::default(),
+            schedules: Vec::default(),
+            keep_logs: keep_logs_default(),
+        }
+    }
 }
 
 #[async_trait]
@@ -52,6 +70,7 @@ impl Load for &Path {
         config.upstreams.extend(conf.upstreams);
         config.filters.extend(conf.filters);
         config.schedules.extend(conf.schedules);
+        config.keep_logs = conf.keep_logs;
 
         Ok(())
     }

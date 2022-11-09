@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use blackhole::{config::Load, server::udp::Upstream};
+use blackhole::{config::Load, server::Upstream};
 use clap::Parser;
 
 #[derive(Debug, Parser)]

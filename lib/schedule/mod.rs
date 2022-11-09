@@ -4,14 +4,20 @@ use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::sleep};
+use tracing::{instrument, log::trace};
 
-use crate::filter::Filter;
+use crate::{
+    config::Config,
+    filter::Filter,
+    statistics::{self, Statistics},
+};
 
 static SCHEDULER: LazyLock<RwLock<Scheduler>> = LazyLock::new(RwLock::default);
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Sched {
     Filters,
+    Logs,
 }
 
 impl Sched {
@@ -19,7 +25,19 @@ impl Sched {
         match self {
             Sched::Filters => {
                 Filter::reset().await;
-                Filter::update().await;
+            }
+            Sched::Logs => {
+                let now = chrono::Utc::now()
+                    - chrono::Duration::seconds(
+                        Config::get(|config| config.keep_logs).await as i64,
+                    );
+
+                Statistics::modify(statistics::REQUESTS, |statistics| {
+                    if let statistics::Statistic::Requests(requests) = statistics {
+                        requests.retain(|request| request.timestamp > now);
+                    }
+                })
+                .await;
             }
         }
     }
@@ -27,8 +45,9 @@ impl Sched {
     async fn init(&self) {
         match self {
             Sched::Filters => {
-                Filter::update().await;
+                Filter::init().await;
             }
+            Sched::Logs => {}
         }
     }
 }
@@ -45,6 +64,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
+    #[instrument]
     async fn run() {
         loop {
             let mut soonest = Utc::now();
@@ -53,12 +73,19 @@ impl Scheduler {
 
             for (schedule, (at, time)) in schedules {
                 if at <= Utc::now() {
+                    trace!("Running schedule: {schedule:?}");
+
                     schedule.run().await;
-                    Self::schedule(Schedule {
+
+                    let next = Self::schedule(Schedule {
                         name: schedule,
                         schedule: time,
                     })
                     .await;
+
+                    if next < soonest {
+                        soonest = next;
+                    }
                 } else if at < soonest {
                     soonest = at;
                 }
@@ -73,7 +100,10 @@ impl Scheduler {
         }
     }
 
-    async fn schedule(schedule: Schedule) {
+    #[instrument]
+    async fn schedule(schedule: Schedule) -> DateTime<Utc> {
+        trace!("Rescheduling {schedule:?}");
+
         SCHEDULER
             .write()
             .await
@@ -92,9 +122,11 @@ impl Scheduler {
                             .unwrap(),
                     schedule.schedule,
                 )
-            });
+            })
+            .0
     }
 
+    #[instrument]
     pub async fn init(schedules: Vec<Schedule>) {
         for schedule in schedules {
             schedule.name.init().await;
