@@ -39,4 +39,10 @@ interface Average {
     average: number;
 }
 
-export type { Answer, Request, Requests, Cache, Average };
+interface Config {
+    filter: { name: string; url: string }[];
+    schedule: { name: string; schedule: string }[];
+    upstream: { ip: string; port: number }[];
+}
+
+export type { Answer, Request, Requests, Cache, Average, Config };

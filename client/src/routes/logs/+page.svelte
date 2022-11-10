@@ -6,8 +6,10 @@
 
     import { inview } from "svelte-inview";
 
+    import { getNotificationsContext } from "svelte-notifications";
+    const { addNotification } = getNotificationsContext();
+
     let requests: Requests;
-    let error: unknown | undefined = undefined;
 
     let count = 25;
     let shownRequests: Requests;
@@ -27,12 +29,21 @@
                     )
                 );
                 shownRequests = requests.slice(0, count);
-                error = undefined;
             } else {
-                error = resp.statusText;
+                addNotification({
+                    type: "error",
+                    text: (await resp.json()).reason,
+                    removeAfter: 3000,
+                    position: "bottom-center",
+                });
             }
         } catch (err: unknown) {
-            error = err;
+            addNotification({
+                type: "error",
+                text: err,
+                removeAfter: 3000,
+                position: "bottom-center",
+            });
         }
     };
 
@@ -45,22 +56,22 @@
     <title>Blackhole: Query Log</title>
 </svelte:head>
 
-<div class="flex flex-row px-4">
+<div class="flex flex-row">
     <h2 class="basis-5/6">Query Log</h2>
     <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
 </div>
 
-<div class="overflow-x-auto">
-    <table class="table table-zebra w-full">
-        <thead>
-            <tr>
-                <th class="sticky top-0">Time</th>
-                <th class="sticky top-0">Request</th>
-                <th class="sticky top-0">Client</th>
-            </tr>
-        </thead>
-        <tbody>
-            {#if requests}
+{#if requests}
+    <div class="overflow-x-auto">
+        <table class="table table-zebra w-full">
+            <thead>
+                <tr>
+                    <th class="sticky top-0">Time</th>
+                    <th class="sticky top-0">Request</th>
+                    <th class="sticky top-0">Client</th>
+                </tr>
+            </thead>
+            <tbody>
                 {#each shownRequests as request, idx (request.timestamp)}
                     {#if idx == shownRequests.length - 1}
                         <tr
@@ -79,13 +90,7 @@
                         </tr>
                     {/if}
                 {/each}
-            {:else if error}
-                <p>Error: {error}</p>
-            {:else}
-                <td />
-                <td>Loading ...</td>
-                <td />
-            {/if}
-        </tbody>
-    </table>
-</div>
+            </tbody>
+        </table>
+    </div>
+{/if}

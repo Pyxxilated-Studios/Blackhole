@@ -28,8 +28,18 @@ impl Sched {
             }
             Sched::Logs => {
                 let now = chrono::Utc::now()
-                    - chrono::Duration::from_std(Config::get(|config| config.keep_logs).await)
-                        .unwrap();
+                    - chrono::Duration::from_std(
+                        Config::get(|config| {
+                            config
+                                .schedules
+                                .iter()
+                                .find(|sched| sched.name == Sched::Logs)
+                                .map(|sched| sched.schedule)
+                        })
+                        .await
+                        .unwrap_or(Duration::from_secs(60 * 60 * 6)),
+                    )
+                    .unwrap();
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {

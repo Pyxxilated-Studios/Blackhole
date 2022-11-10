@@ -1,21 +1,26 @@
-use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock, time::Duration};
+use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::instrument;
+use tracing::{error, instrument};
 
 use crate::{filter::List, schedule::Schedule, server::Upstream};
 
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
 static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
 
-fn keep_logs_default() -> Duration {
-    // 6 Hours
-    Duration::from_secs(60 * 60 * 6)
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("IO Error: {0}")]
+    IO(#[from] std::io::Error),
+
+    #[error("Serialisation Error: {0}")]
+    Serialization(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
@@ -23,19 +28,6 @@ pub struct Config {
     pub filters: Vec<List>,
     #[serde(alias = "schedule", rename(serialize = "schedule"))]
     pub schedules: Vec<Schedule>,
-    #[serde(with = "humantime_serde", default = "keep_logs_default")]
-    pub keep_logs: Duration,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            upstreams: HashSet::default(),
-            filters: Vec::default(),
-            schedules: Vec::default(),
-            keep_logs: keep_logs_default(),
-        }
-    }
 }
 
 #[async_trait]
@@ -70,7 +62,6 @@ impl Load for &Path {
         config.upstreams.extend(conf.upstreams);
         config.filters.extend(conf.filters);
         config.schedules.extend(conf.schedules);
-        config.keep_logs = conf.keep_logs;
 
         Ok(())
     }
@@ -100,11 +91,11 @@ impl Config {
     ///  - There is no disk space left
     ///  - The config file is not writable
     ///
-    pub async fn save() -> std::io::Result<()> {
-        std::fs::write(
+    pub async fn save() -> Result<(), Error> {
+        Ok(std::fs::write(
             Path::new(&*CONFIG_FILE.read().await),
-            toml::to_string(&*CONFIG.read().await).unwrap_or_default(),
-        )
+            toml::to_string(&*CONFIG.read().await)?,
+        )?)
     }
 
     ///
@@ -125,11 +116,21 @@ impl Config {
     /// # Errors
     /// This will result in an error if saving the config to a file does
     ///
-    pub async fn set<F>(func: F) -> std::io::Result<()>
+    pub async fn set<F>(func: F) -> Result<(), Error>
     where
         F: Fn(&mut Config),
     {
+        let old_config = CONFIG.read().await.clone();
         func(&mut *CONFIG.write().await);
-        Self::save().await
+        if let Err(err) = Self::save().await {
+            error!("{err:?}");
+            *CONFIG.write().await = old_config;
+            match Self::save().await {
+                Ok(_) => Err(err),
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(())
+        }
     }
 }

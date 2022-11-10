@@ -38,7 +38,8 @@
     },
     "dependencies": {
         "svelte-frappe-charts": "^1.9.2",
-        "svelte-inview": "^3"
+        "svelte-inview": "^3",
+        "svelte-notifications": "^0.9.98"
     },
     "type": "module"
 }
