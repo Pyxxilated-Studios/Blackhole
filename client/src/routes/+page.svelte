@@ -3,6 +3,9 @@
     import type { Average, Cache, Requests } from "src/types";
     import { onMount } from "svelte";
 
+    import { getNotificationsContext } from "svelte-notifications";
+    const { addNotification } = getNotificationsContext();
+
     type Data = { labels: string[]; datasets: { values: number[] }[] };
 
     const MAX_TIME_SERIES = 20;
@@ -11,7 +14,6 @@
     let cache: Cache;
     let average: Average;
     let requests: Requests;
-    let error: unknown | undefined = undefined;
 
     let queryTypes: Data = {
         labels: [],
@@ -42,14 +44,14 @@
     };
 
     const byteString = (bytes: number): string => {
-        if (bytes < 1000) {
+        if (bytes < 1_000) {
             return `${bytes} B`;
-        } else if (bytes < 1000000) {
+        } else if (bytes < 1_000_000) {
             return `${(bytes / 1000).toFixed(3)} KB`;
-        } else if (bytes < 1000000000) {
-            return `${(bytes / 1000000).toFixed(3)} MB`;
+        } else if (bytes < 1_000_000_000) {
+            return `${(bytes / 1_000_000).toFixed(3)} MB`;
         } else {
-            return `${(bytes / 1000000000).toFixed(3)} GB`;
+            return `${(bytes / 1_000_000_000).toFixed(3)} GB`;
         }
     };
 
@@ -61,21 +63,26 @@
                 fetch("/api/statistics/requests"),
             ]);
 
-            error = undefined;
-
             if (cacheResponse.ok) {
                 cache = (await cacheResponse.json()).Cache;
-
-                error = undefined;
             } else {
-                error = cacheResponse.statusText;
+                addNotification({
+                    type: "error",
+                    text: (await cacheResponse.json()).reason,
+                    removeAfter: 3000,
+                    position: "bottom-center",
+                });
             }
 
             if (averageResponse.ok) {
                 average = (await averageResponse.json()).Average;
-                error = undefined;
             } else {
-                error = averageResponse.statusText;
+                addNotification({
+                    type: "error",
+                    text: (await averageResponse.json()).reason,
+                    removeAfter: 3000,
+                    position: "bottom-center",
+                });
             }
 
             if (requestsResponse.ok) {
@@ -136,10 +143,20 @@
                     blockedRequests.labels = blockedRequests.labels.slice(-MAX_TIME_SERIES);
                 }
             } else {
-                error = requestsResponse.statusText;
+                addNotification({
+                    type: "error",
+                    text: (await requestsResponse.json()).reason,
+                    removeAfter: 3000,
+                    position: "bottom-center",
+                });
             }
         } catch (err: unknown) {
-            error = err;
+            addNotification({
+                type: "error",
+                text: err,
+                removeAfter: 3000,
+                position: "bottom-center",
+            });
         }
     };
 
@@ -150,82 +167,71 @@
     <title>Blackhole: Statistics</title>
 </svelte:head>
 
-<div class="flex flex-row px-4">
+<div class="flex flex-row">
     <h2 class="basis-5/6">Statistics:</h2>
 
     <button class="btn basis-1/6 mt-14" on:click={refetch}>Refresh</button>
 </div>
-{#if error}
-    <p>Error: {error}</p>
-{:else if cache || requests}
-    <div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
-        {#if cache}
-            <div class="stat">
-                <div class="stat-title">Cache Size</div>
-                <div class="stat-value">{byteString(cache.size)}</div>
-            </div>
-        {/if}
-
-        {#if average}
-            <div class="stat">
-                <div class="stat-title">Average Response Time</div>
-                <div class="stat-value">{(average.average / 1000000).toFixed(3)} ms</div>
-            </div>
-        {/if}
+<div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
+    <div class="stat">
+        <div class="stat-title">Cache Size</div>
+        <div class="stat-value">{byteString(cache?.size ?? 0)}</div>
     </div>
 
-    <div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
-        <div class="stat">
-            <div class="stat-title">Request Count</div>
-            <div class="stat-value">{average?.count}</div>
-            <div class="stat-desc">
-                <Chart
-                    data={requestsTimeSeries}
-                    title="Requests per Hour"
-                    type="line"
-                    lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
-                />
-            </div>
-        </div>
+    <div class="stat">
+        <div class="stat-title">Average Response Time</div>
+        <div class="stat-value">{((average?.average ?? 0) / 1000000).toFixed(3)} ms</div>
+    </div>
+</div>
 
-        <div class="stat flex-1">
-            <div class="stat-title">Blocked Requests</div>
-            <div class="stat-value">
-                {blockedRequestCount} ({(
-                    (blockedRequestCount / (requests?.length ?? 1)) *
-                    100
-                ).toFixed(2)}%)
-            </div>
-            <div class="stat-desc">
-                <Chart
-                    data={blockedRequests}
-                    title="Blocked Requests per Hour"
-                    type="line"
-                    lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
-                />
-            </div>
+<div class="grid stats stats-vertical md:grid-cols-2 xs:grid-cols-1 lg:stats-horizontal">
+    <div class="stat">
+        <div class="stat-title">Request Count</div>
+        <div class="stat-value">{average?.count ?? 0}</div>
+        <div class="stat-desc">
+            <Chart
+                data={requestsTimeSeries}
+                title="Requests per Hour"
+                type="line"
+                lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+            />
         </div>
     </div>
 
-    <div class="grid md:grid-cols-2 xs:grid-cols-1">
-        <Chart
-            data={{
-                labels: ["Hits", "Misses"],
-                datasets: [
-                    {
-                        values: [cache?.hits ?? 0, cache?.misses ?? 0],
-                    },
-                ],
-            }}
-            title="Cache Effictiveness"
-            type="pie"
-        />
-
-        <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
+    <div class="stat flex-1">
+        <div class="stat-title">Blocked Requests</div>
+        <div class="stat-value">
+            {blockedRequestCount} ({((blockedRequestCount / (requests?.length ?? 1)) * 100).toFixed(
+                2
+            )}%)
+        </div>
+        <div class="stat-desc">
+            <Chart
+                data={blockedRequests}
+                title="Blocked Requests per Hour"
+                type="line"
+                lineOptions={{ heatline: 1, hideDots: 1, xIsSeries: true }}
+            />
+        </div>
     </div>
-{:else}
-    <p>Loading ...</p>
-{/if}
+</div>
+
+<div class="grid md:grid-cols-2 xs:grid-cols-1">
+    <Chart
+        data={{
+            labels: ["Hits", "Misses"],
+            datasets: [
+                {
+                    values: [cache?.hits ?? 0, cache?.misses ?? 0],
+                },
+            ],
+        }}
+        title="Cache Effictiveness"
+        type="pie"
+    />
+
+    <Chart data={queryTypes} title="Requests by Query Type" type="pie" maxSlices={5} />
+</div>
 
 <style>
     :global(.chart-container .title),
