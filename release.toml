@@ -1,3 +1,0 @@
-pre-release-commit-message = "chore: release {{version}}"
-tag-message = "{{tag_name}}"
-consolidate-commits = true
