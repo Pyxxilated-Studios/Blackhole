@@ -135,7 +135,7 @@ impl Statistics {
         trace!("Retrieving {statistic}: {from:?} -- {to:?}");
 
         match &STATISTICS.read().await.statistics.get(statistic) {
-            Some(&Statistic::Requests(ref requests)) => {
+            Some(Statistic::Requests(ref requests)) => {
                 let len = requests.len();
 
                 let from = from.map_or(0, |from| from.parse().unwrap_or_default());

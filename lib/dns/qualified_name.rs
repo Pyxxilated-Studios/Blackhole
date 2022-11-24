@@ -10,7 +10,8 @@ use super::traits::FromBuffer;
 
 pub const MAX_QUALIFIED_NAME_LENGTH: usize = 2048;
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QualifiedName(pub BString);
 
 impl QualifiedName {

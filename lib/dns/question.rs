@@ -6,10 +6,12 @@ use crate::dns::{
     QueryType, Result,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize)]
 pub struct Question {
     pub name: QualifiedName,
     pub qtype: QueryType,
+    pub class: u16,
 }
 
 impl<'a, T: IO> WriteTo<'a, T> for Question {
@@ -17,7 +19,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Question {
 
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
-        out.write(self.name)?.write(self.qtype)?.write(1u16)
+        out.write(self.name)?.write(self.qtype)?.write(self.class)
     }
 }
 
@@ -26,9 +28,8 @@ impl<I: IO> FromBuffer<I> for Question {
         let question = Question {
             name: buffer.read()?,
             qtype: QueryType::from(buffer.read::<u16>()?),
+            class: buffer.read()?,
         };
-
-        let _class = buffer.read::<u16>()?;
 
         Ok(question)
     }

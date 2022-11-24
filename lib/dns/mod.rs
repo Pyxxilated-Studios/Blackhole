@@ -34,7 +34,8 @@ pub enum DNSError {
 
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct RR {
     pub domain: QualifiedName,
     pub query_type: QueryType,
@@ -67,7 +68,8 @@ impl<'a, T: IO> WriteTo<'a, T> for RR {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Default, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Copy, Clone, Eq, Default, Serialize)]
 pub struct Ttl(pub u32);
 
 impl From<u32> for Ttl {
@@ -114,7 +116,8 @@ impl<'a, T: IO> WriteTo<'a, T> for Ttl {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum ResultCode {
     NOERROR = 0,
     FORMERR = 1,
@@ -156,7 +159,8 @@ impl From<ResultCode> for u8 {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy, PartialOrd, Ord, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(PartialEq, Eq, Clone, Hash, Copy, PartialOrd, Ord, Serialize)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,
@@ -252,7 +256,8 @@ impl<'a, T: IO> WriteTo<'a, T> for QueryType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum Record {
     UNKNOWN {
         record: RR,
@@ -598,7 +603,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 write_record!(out, record, priority, target, params)
             }
             Record::UNKNOWN { .. } => {
-                trace!("Skipping record: {:?}", self);
+                trace!("Skipping UNKNOWN record");
                 Ok(out)
             }
         }
@@ -721,11 +726,9 @@ impl<I: IO> FromBuffer<I> for Record {
                 let tag = buffer.read()?;
                 let name = buffer.read()?;
 
-                let sign_len = if let Some(length) =
+                let Some(sign_len) =
                     (record.data_length as usize).checked_sub(buffer.pos() - start)
-                {
-                    length
-                } else {
+                else {
                     return Err(DNSError::InvalidPacket);
                 };
 

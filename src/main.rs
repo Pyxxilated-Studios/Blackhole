@@ -1,4 +1,6 @@
+#![allow(incomplete_features)]
 #![forbid(unsafe_code)]
+#![feature(async_fn_in_trait)]
 
 mod cli;
 
@@ -58,7 +60,7 @@ async fn main() {
     blackhole::config::Config::load(
         cli.config
             .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml"))
-            .as_path(),
+            .clone(),
     )
     .await
     .unwrap_or_default();

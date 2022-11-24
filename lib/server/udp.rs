@@ -62,7 +62,8 @@ impl ServerBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone)]
 pub struct Server {
     socket: Arc<RwLock<UdpSocket>>,
     address: SocketAddr,

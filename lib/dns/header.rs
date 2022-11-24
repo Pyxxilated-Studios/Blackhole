@@ -4,7 +4,8 @@ use crate::dns::{
 };
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
     pub id: u16,
 

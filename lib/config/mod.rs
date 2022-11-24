@@ -1,6 +1,10 @@
-use std::{collections::HashSet, fmt::Debug, path::Path, sync::LazyLock};
+use std::{
+    collections::HashSet,
+    fmt::Debug,
+    path::{Path, PathBuf},
+    sync::LazyLock,
+};
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -20,7 +24,8 @@ pub enum Error {
     Serialization(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
@@ -30,7 +35,6 @@ pub struct Config {
     pub schedules: Vec<Schedule>,
 }
 
-#[async_trait]
 pub trait Load {
     ///
     /// Load a configuration profile, which could be something like
@@ -40,11 +44,10 @@ pub trait Load {
     /// This may error in several cases, which should be documented
     /// in the implementation.
     ///
-    async fn load(self, config: &mut Config) -> std::io::Result<()>;
+    async fn load(&self, config: &mut Config) -> std::io::Result<()>;
 }
 
-#[async_trait]
-impl Load for &Path {
+impl Load for PathBuf {
     ///
     /// Load a file (e.g. Configuration file)
     ///
@@ -53,7 +56,7 @@ impl Load for &Path {
     /// isn't valid toml this will fail.
     ///
     #[instrument(level = "info", ret, err, skip(self, config), fields(file = self.to_str()))]
-    async fn load(self, config: &mut Config) -> std::io::Result<()> {
+    async fn load(&self, config: &mut Config) -> std::io::Result<()> {
         *CONFIG_FILE.write().await = self.to_string_lossy().to_string();
 
         let conf = std::fs::read_to_string(self)?;
@@ -75,7 +78,7 @@ impl Config {
     /// This can fail if the configuration profile fails to load,
     /// see [`Load`]
     ///
-    pub async fn load<C: Load + Debug>(loader: C) -> std::io::Result<()> {
+    pub async fn load<C: Load + 'static>(loader: C) -> std::io::Result<()> {
         let mut config = CONFIG.write().await;
         loader.load(&mut config).await?;
 

@@ -8,7 +8,8 @@ fn default_port() -> u16 {
     53
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Upstream {
     pub ip: IpAddr,
     #[serde(default = "default_port")]
