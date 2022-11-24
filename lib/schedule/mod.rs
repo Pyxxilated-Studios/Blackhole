@@ -14,7 +14,7 @@ use crate::{
 
 static SCHEDULER: LazyLock<RwLock<Scheduler>> = LazyLock::new(RwLock::default);
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Sched {
     Filters,
     Logs,
@@ -61,11 +61,11 @@ impl Sched {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Schedule {
-    name: Sched,
+    pub name: Sched,
     #[serde(with = "humantime_serde", default)]
-    schedule: Duration,
+    pub schedule: Duration,
 }
 
 #[derive(Default)]
@@ -110,7 +110,7 @@ impl Scheduler {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(schedule))]
     async fn schedule(schedule: Schedule) -> DateTime<Utc> {
         trace!("Rescheduling {schedule:?}");
 

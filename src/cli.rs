@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
-use async_trait::async_trait;
 use blackhole::{config::Load, server::Upstream};
 use clap::Parser;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
@@ -23,10 +22,10 @@ pub struct Cli {
     upstreams: Vec<Upstream>,
 }
 
-#[async_trait]
 impl Load for Cli {
-    async fn load(self, config: &mut blackhole::config::Config) -> std::io::Result<()> {
-        config.upstreams.extend(self.upstreams);
+    #[allow(clippy::unused_async)]
+    async fn load(&self, config: &mut blackhole::config::Config) -> std::io::Result<()> {
+        config.upstreams.extend(self.upstreams.clone());
 
         Ok(())
     }

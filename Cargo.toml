@@ -22,7 +22,6 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
-async-trait = "0.1"
 bstr = { version = "1", default-features = false, features = [ "alloc", "serde" ] }
 chrono = { version = "0.4", default-features = false, features = [ "clock", "serde" ] }
 clap = { version = "4" , default-features = false, features = [ "derive", "help", "std", "usage" ] }

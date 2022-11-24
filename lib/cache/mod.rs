@@ -18,7 +18,6 @@ use crate::{
 type PacketExpires = (Packet, Vec<DateTime<Utc>>);
 type Entry = FxHashMap<QueryType, PacketExpires>;
 
-#[derive(Debug)]
 pub struct Cache {
     cache: FxHashMap<BString, Entry>,
 }

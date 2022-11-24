@@ -9,7 +9,8 @@ use crate::dns::{
 
 pub(crate) const DNS_PACKET_SIZE: usize = 512;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Buffer {
     pub buffer: [u8; DNS_PACKET_SIZE],
     pub pos: usize,
@@ -25,7 +26,8 @@ impl Default for Buffer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResizableBuffer {
     pub buffer: Vec<u8>,
     pub pos: usize,
@@ -139,7 +141,7 @@ macro_rules! impl_try_from {
 
 impl_try_from!(Buffer, ResizableBuffer);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Packet {
     pub header: Header,
     pub questions: Vec<Question>,
@@ -225,6 +227,7 @@ mod test {
             questions: vec![Question {
                 name: QualifiedName("example.com".into()),
                 qtype: QueryType::MX,
+                class: 1u16,
             }],
             answers: vec![
                 Record::MX {
@@ -285,6 +288,7 @@ mod test {
             questions: vec![Question {
                 name: QualifiedName("example.com".into()),
                 qtype: QueryType::AAAA,
+                class: 1u16,
             }],
             answers: vec![Record::AAAA {
                 record: RR {

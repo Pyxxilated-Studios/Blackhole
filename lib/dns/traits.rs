@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::dns::Result;
 
 pub trait FromBuffer<I: IO> {
@@ -170,7 +168,7 @@ pub trait IO {
     ///
     fn read<T>(&'_ mut self) -> Result<T>
     where
-        T: FromBuffer<Self> + Default,
+        T: FromBuffer<Self>,
         Self: Sized,
     {
         T::from_buffer(self)
@@ -186,9 +184,26 @@ pub trait IO {
     fn write<'a, T>(&'a mut self, val: T) -> Result<&'a mut Self>
     where
         Self: Sized,
-        T: WriteTo<'a, Self, Out = Self> + Debug,
+        T: WriteTo<'a, Self, Out = Self>,
     {
         val.write_to(self)
+    }
+
+    ///
+    /// Write a range of elements into the buffer
+    ///
+    /// # Errors
+    /// If the number of elements causes the buffer to write
+    /// past its internal state
+    ///
+    fn write_range<'a, T>(&'a mut self, range: &[T]) -> Result<&'a mut Self>
+    where
+        Self: Sized,
+        T: WriteTo<'a, Self, Out = Self> + Clone,
+    {
+        range
+            .iter()
+            .try_fold(self, |out, val| val.clone().write_to(out))
     }
 }
 
@@ -215,7 +230,7 @@ macro_rules! impl_write {
     }
 }
 
-macro_rules! impl_try_from {
+macro_rules! impl_from_buffer {
     ( $($t:ty),* ) => {
         $(impl<I: IO> FromBuffer<I> for $t  {
             #[inline]
@@ -238,34 +253,40 @@ impl<I: IO> FromBuffer<I> for u8 {
 }
 
 impl_write!(u8, u16, u32, u64, u128, usize);
-impl_try_from!(u16, u32, u64, u128, usize);
+impl_from_buffer!(u16, u32, u64, u128, usize);
 
-impl<'a, T: IO> WriteTo<'a, T> for &[u8] {
-    type Out = T;
-
-    #[inline]
-    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
-        self.iter().try_fold(out, |out, &val| out.write(val))
-    }
-}
-
-impl<'a, T: IO, const N: usize> WriteTo<'a, T> for &[u8; N] {
-    type Out = T;
-
-    #[inline]
-    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
-        self.iter().try_fold(out, |out, &val| out.write(val))
-    }
-}
-
-impl<'a, T: IO, E> WriteTo<'a, T> for Vec<E>
+impl<'a, T: IO, V> WriteTo<'a, T> for &[V]
 where
-    E: WriteTo<'a, T, Out = T> + Clone + Debug,
+    V: WriteTo<'a, T, Out = T> + Clone,
 {
     type Out = T;
 
     #[inline]
     fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
-        self.iter().try_fold(out, |out, val| out.write(val.clone()))
+        out.write_range(self)
+    }
+}
+
+impl<'a, T: IO, const N: usize, V> WriteTo<'a, T> for &[V; N]
+where
+    V: WriteTo<'a, T, Out = T> + Clone,
+{
+    type Out = T;
+
+    #[inline]
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write_range(self.as_slice())
+    }
+}
+
+impl<'a, T: IO, V> WriteTo<'a, T> for Vec<V>
+where
+    V: WriteTo<'a, T, Out = T> + Clone,
+{
+    type Out = T;
+
+    #[inline]
+    fn write_to(self, out: &'a mut T) -> Result<&'a mut T> {
+        out.write_range(self.as_slice())
     }
 }

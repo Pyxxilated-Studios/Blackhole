@@ -1,5 +1,12 @@
+#![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(array_try_from_fn, ip, once_cell, option_get_or_insert_default)]
+#![feature(
+    array_try_from_fn,
+    async_fn_in_trait,
+    ip,
+    once_cell,
+    option_get_or_insert_default
+)]
 
 pub mod api;
 pub mod cache;

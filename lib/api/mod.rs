@@ -80,8 +80,6 @@ impl Server {
     }
 
     async fn update_config(body: Config) -> Result<impl warp::Reply, Infallible> {
-        println!("Received body: {body:?}");
-
         match Config::set(|config| *config = body.clone()).await {
             Ok(_) => Ok(Response::builder().body("")),
             Err(err) => {

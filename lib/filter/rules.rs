@@ -22,18 +22,21 @@ use serde::Serialize;
 
 use super::Error;
 
-#[derive(Debug, Clone, Serialize, PartialEq, PartialOrd)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Serialize, PartialEq, PartialOrd)]
 pub struct Rewrite {
     pub v4: IpAddr,
     pub v6: IpAddr,
 }
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub(crate) struct Action {
     pub rewrite: Option<Rewrite>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub enum Kind {
     Allow,
     Deny,
@@ -41,7 +44,8 @@ pub enum Kind {
     None,
 }
 
-#[derive(Debug, Clone)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone)]
 pub enum Type {
     Host(IpAddr, String),
     Domain(String),
@@ -49,14 +53,16 @@ pub enum Type {
     Ip(IpAddr),
 }
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
 pub struct Rule {
     pub(crate) domain: String,
     pub(crate) ty: Kind,
     pub(crate) action: Option<Action>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Default, Clone, PartialEq)]
 pub struct Rules {
     pub(crate) children: FxHashMap<BString, Rules>,
     pub(crate) rule: Option<Rule>,

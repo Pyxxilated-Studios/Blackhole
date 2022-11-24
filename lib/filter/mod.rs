@@ -5,6 +5,7 @@ use std::{
     hash::{Hash, Hasher},
     path::Path,
     sync::LazyLock,
+    time::SystemTime,
 };
 
 use bstr::ByteSlice;
@@ -14,13 +15,18 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{config, dns};
+use crate::{
+    config::{self, Config},
+    dns,
+    schedule::Sched,
+};
 
 use self::rules::{Rule, Rules};
 
 static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
 
-#[derive(Clone, Debug, Eq, Serialize, Deserialize)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Clone, Eq, Serialize, Deserialize)]
 pub struct List {
     pub name: String,
     pub url: String,
@@ -49,7 +55,8 @@ impl std::hash::Hash for List {
     }
 }
 
-#[derive(Default, Debug)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Default)]
 pub struct Filter {
     pub lists: FxHashSet<List>,
     pub rules: rules::Rules,
@@ -101,7 +108,25 @@ impl Filter {
     }
 
     async fn download(list: List) -> Result<(), Error> {
-        if !Path::new(&list.to_string()).exists() {
+        let path = list.to_string();
+        let path = Path::new(&path);
+
+        let schedule = Config::get(|config| {
+            config
+                .schedules
+                .iter()
+                .find(|sched| sched.name == Sched::Filters)
+                .map(|sched| sched.schedule)
+        })
+        .await
+        .unwrap_or(std::time::Duration::ZERO);
+
+        let is_past_due = SystemTime::now()
+            .duration_since(path.metadata()?.modified()?)
+            .unwrap_or_default()
+            >= schedule;
+
+        if !path.exists() || is_past_due {
             info!("Fetching {}", list.url);
 
             let response = ureq::get(&list.url).call()?;
@@ -249,6 +274,7 @@ mod tests {
             questions: vec![Question {
                 name: QualifiedName("zz3r0.com".into()),
                 qtype: QueryType::A,
+                class: 1u16,
             }],
             answers: vec![],
             authorities: vec![],
