@@ -486,7 +486,9 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 expire,
                 minimum,
             } => {
-                write_record!(out, record, m_name, r_name, serial, refresh, retry, expire, minimum)
+                write_record!(
+                    out, record, m_name, r_name, serial, refresh, retry, expire, minimum
+                )
             }
             Record::TXT { record, data } => write_record!(out, record, data),
             Record::SRV {
