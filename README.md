@@ -3,8 +3,8 @@
 [![Tests](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml/badge.svg)](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml)
 ![Release](https://img.shields.io/github/v/release/pyxxil/blackhole?sort=semver)
 ![License](https://img.shields.io/github/license/pyxxil/blackhole)
-![Docker](https://ghcr-badge.herokuapp.com/pyxxil/blackhole/latest_tag?label=latest)
-![Docker](https://ghcr-badge.herokuapp.com/pyxxil/blackhole/size)
+![Docker](https://ghcr-badge.deta.dev/pyxxil/blackhole/latest_tag?label=latest)
+![Docker](https://ghcr-badge.deta.dev/pyxxil/blackhole/size)
 [![codecov](https://codecov.io/gh/Pyxxil/Blackhole/branch/main/graph/badge.svg?token=98FLSLAD6M)](https://codecov.io/gh/Pyxxil/Blackhole)
 
 - [Blackhole](#blackhole)
@@ -24,16 +24,6 @@ The most popular alternatives are:
 
 ### Why Blackhole
 
-The above all have something that the others do not (or, if it does exist, it requires some very manual tuning).
+The above all have something that the others do not (or, if it does exist, it requires some very manual tuning). Currently, Blackhole is only able to cover a fraction of any of these on its own. However, to see what it is planning on handling, check out the Issues page.
 
-## Roadmap
-
-- [ ] Client
-  - [ ] View all blocklists
-  - [ ] Check that blocklist domain isn't blocked
-  - [ ] Check what list(s) blocked a domain
-  - [ ] Ability to check overlap of blocklists
-- [ ] Server
-  - [ ] Prometheus Export
-  - [ ] Open Telemetry
-  - [ ] Health Endpoint
+<!-- Should probably put an actual roadmap somewhere -->
