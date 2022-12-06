@@ -1,6 +1,7 @@
 const tailwindcss = require("tailwindcss");
 const autoprefixer = require("autoprefixer");
 const purgecss = require("@fullhuman/postcss-purgecss");
+const csso = require("postcss-csso");
 
 module.exports = {
     plugins: [
