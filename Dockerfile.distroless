@@ -1,4 +1,4 @@
-FROM node:19-alpine as client
+FROM node:19.2-alpine as client
 
 WORKDIR /client
 
@@ -9,7 +9,7 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1.64-alpine as server
+FROM rust:1.65-alpine as server
 
 RUN apk add musl-dev pkgconfig git
 RUN rustup set profile minimal
@@ -39,7 +39,7 @@ RUN cargo build --release
 
 FROM busybox:musl as busybox
 
-FROM denoland/deno:distroless-1.27.0
+FROM denoland/deno:distroless-1.28.3
 
 # Now copy the static shell into base image.
 COPY --from=busybox /bin/sh /bin/sh
@@ -53,6 +53,10 @@ COPY ./entrypoint.bash .
 COPY --from=server /blackhole/target/release/blackhole .
 
 VOLUME /config
+
+EXPOSE 53
+EXPOSE 3000
+EXPOSE 5000
 
 ENV LOG_LEVEL="info"
 
