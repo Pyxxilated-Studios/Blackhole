@@ -9,9 +9,9 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1.65-slim as server
+FROM rust:1.65-alpine as server
 
-RUN apt update && apt install -y pkg-config git
+RUN apk add musl-dev pkgconfig git
 RUN rustup set profile minimal
 RUN rustup default nightly
 
@@ -51,9 +51,7 @@ COPY ./entrypoint.bash .
 
 VOLUME /config
 
-EXPOSE 53
-EXPOSE 3000
-EXPOSE 5000
+EXPOSE 53/tcp 53/udp 3000 5000
 
 ENV LOG_LEVEL="info"
 

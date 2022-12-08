@@ -51,9 +51,7 @@ COPY --from=server /blackhole/target/release/blackhole .
 
 VOLUME /config
 
-EXPOSE 53
-EXPOSE 3000
-EXPOSE 5000
+EXPOSE 53/tcp 53/udp 3000 5000
 
 ENV LOG_LEVEL="info"
 
