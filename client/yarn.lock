@@ -1736,9 +1736,9 @@ svelte-adapter-deno@^0.8.1:
     tiny-glob "^0.2.9"
 
 svelte-check@^2:
-  version "2.10.0"
-  resolved "https://registry.yarnpkg.com/svelte-check/-/svelte-check-2.10.0.tgz#38a5d888efa3edaca4827aa61db5d4d4eaa90532"
-  integrity sha512-5iLCoja/WsithyRkNtIeDQ0euJlgWj3Zzo2IA6iuHMuuX9D9OrRYZj2WlA5ACnAFQnN5L9mxWcwUW9VxDNEoGg==
+  version "2.10.2"
+  resolved "https://registry.yarnpkg.com/svelte-check/-/svelte-check-2.10.2.tgz#903919e5d174be4a6508cd57b48b6dbfd44a61dd"
+  integrity sha512-h1Tuiir0m8J5yqN+Vx6qgKKk1L871e6a9o7rMwVWfu8Qs6Wg7x2R+wcxS3SO3VpW5JCxCat90rxPsZMYgz+HaQ==
   dependencies:
     "@jridgewell/trace-mapping" "^0.3.9"
     chokidar "^3.4.1"
