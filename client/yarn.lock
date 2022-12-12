@@ -1715,13 +1715,13 @@ svelte-check@^2:
     svelte-preprocess "^4.0.0"
     typescript "*"
 
-svelte-frappe-charts@^1.9.2:
-  version "1.9.2"
-  resolved "https://registry.yarnpkg.com/svelte-frappe-charts/-/svelte-frappe-charts-1.9.2.tgz#c28dcb39a5094892bed62a8b29bfe42e498e0ef8"
-  integrity sha512-FYwbI5lY6fiN8b+5IFu6RvcgpWpCKTTpL0sGCqbwgbth4cIZoOjIAdU7JbzjuaF5mUCHRt4TSnGEsK+345C2hw==
+svelte-frappe-charts@^1.10.0:
+  version "1.10.0"
+  resolved "https://registry.yarnpkg.com/svelte-frappe-charts/-/svelte-frappe-charts-1.10.0.tgz#bc9160e6f2d87003f2a9ac16e8f717e9af9bdb45"
+  integrity sha512-TkkcovOAeoieiDFFJS7p56E91WcS5qFq5lpkF+yuCBMG17HaC+7PrkT/0zzii0BBnYlOuumsfb9S5UmsDZRhdg==
   dependencies:
     frappe-charts "^1.6.2"
-    svelte "^3.48.0"
+    svelte "^3.53.1"
 
 svelte-hmr@^0.15.1:
   version "0.15.1"
@@ -1762,10 +1762,10 @@ svelte-preprocess@^5:
     sorcery "^0.10.0"
     strip-indent "^3.0.0"
 
-svelte@^3, svelte@^3.48.0:
-  version "3.53.1"
-  resolved "https://registry.yarnpkg.com/svelte/-/svelte-3.53.1.tgz#db9d7df7a8f570e8e22547444c149208b1914442"
-  integrity sha512-Q4/hHkktZogGhN5iqxqSi9sjEVoe/NbIxX4hXEHoasTxj+TxEQVAq66LnDMdAZxjmsodkoI5F3slqsS68U7FNw==
+svelte@^3, svelte@^3.53.1:
+  version "3.54.0"
+  resolved "https://registry.yarnpkg.com/svelte/-/svelte-3.54.0.tgz#b4bcd865bd9e927f9f7b76563288ef5f4d72867a"
+  integrity sha512-tdrgeJU0hob0ZWAMoKXkhcxXA7dpTg6lZGxUeko5YqvPdJBiyRspGsCwV27kIrbrqPP2WUoSV9ca0gnLlw8YzQ==
 
 tailwindcss@^3, tailwindcss@^3.0.24:
   version "3.2.4"
