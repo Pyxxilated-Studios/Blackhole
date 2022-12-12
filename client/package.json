@@ -37,7 +37,7 @@
         "vite": "^3"
     },
     "dependencies": {
-        "svelte-frappe-charts": "^1.9.2",
+        "svelte-frappe-charts": "^1.10.0",
         "svelte-inview": "^3",
         "svelte-notifications": "^0.9.98"
     },
