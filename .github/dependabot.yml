@@ -5,11 +5,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    labels:
+      - "server"
+      - "dependencies"
 
   - package-ecosystem: "npm"
     directory: "/client"
     schedule:
       interval: "weekly"
+    labels:
+      - "client"
+      - "dependencies"
 
   - package-ecosystem: "github-actions"
     directory: "/"
