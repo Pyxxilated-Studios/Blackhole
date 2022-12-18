@@ -16,6 +16,7 @@ updates:
     labels:
       - "client"
       - "dependencies"
+    open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
