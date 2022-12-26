@@ -1,5 +1,7 @@
 use std::{convert::TryInto, path::Path};
 
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
 use blackhole::dns::{
     header::Header,
     packet::{Buffer, Packet, ResizableBuffer},
@@ -8,7 +10,6 @@ use blackhole::dns::{
     traits::FromBuffer,
     DNSError, QueryType, Record, ResultCode, Ttl, RR,
 };
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn packet() -> Packet {
     Packet {
@@ -32,6 +33,7 @@ fn packet() -> Packet {
         questions: vec![Question {
             name: QualifiedName("example.com".into()),
             qtype: QueryType::MX,
+            class: 0,
         }],
         answers: vec![
             Record::MX {

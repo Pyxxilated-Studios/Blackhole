@@ -2,9 +2,9 @@ name: Coverage
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   pull_request:
-    branches: ["main"]
+    branches: [ "main" ]
 
 jobs:
   coverage:
@@ -22,7 +22,7 @@ jobs:
 
       - name: Install latest nextest release
         uses: taiki-e/install-action@nextest
-      
+
       - name: Collect coverage data
         run: cargo llvm-cov --all-features --workspace nextest --lcov --output-path lcov.info
 

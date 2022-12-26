@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::dns::{
     qualified_name::QualifiedName,
@@ -7,7 +7,7 @@ use crate::dns::{
 };
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize)]
+#[derive(Clone, PartialEq, Eq, Default, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Question {
     pub name: QualifiedName,
     pub qtype: QueryType,

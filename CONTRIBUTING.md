@@ -2,7 +2,8 @@
 
 ## Commits
 
-Mostly these should follow the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) style. This is ensured by
+Mostly these should follow the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) style. This is
+ensured by
 the CI.
 
 ## Releases

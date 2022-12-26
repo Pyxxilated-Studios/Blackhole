@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use blackhole::{config::Load, server::Upstream};
 use clap::Parser;
+
+use blackhole::{config::Load, server::Upstream};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

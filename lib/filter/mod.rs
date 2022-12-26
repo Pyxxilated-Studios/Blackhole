@@ -1,5 +1,3 @@
-pub mod rules;
-
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -15,13 +13,11 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{
-    config::{self, Config},
-    dns,
-    schedule::Sched,
-};
+use crate::{config::Config, dns, schedule::Sched};
 
 use self::rules::{Rule, Rules};
+
+pub mod rules;
 
 static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
 
@@ -48,8 +44,8 @@ impl PartialEq for List {
     }
 }
 
-impl std::hash::Hash for List {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for List {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.url.hash(state);
     }
@@ -59,7 +55,7 @@ impl std::hash::Hash for List {
 #[derive(Default)]
 pub struct Filter {
     pub lists: FxHashSet<List>,
-    pub rules: rules::Rules,
+    pub rules: Rules,
 }
 
 #[derive(Debug, Error)]
@@ -90,7 +86,7 @@ impl Filter {
 
     #[instrument(level = "info")]
     pub async fn update() {
-        let tasks = config::Config::get(|config| config.filters.clone())
+        let tasks = Config::get(|config| config.filters.clone())
             .await
             .into_iter()
             .map(|filter| {
@@ -103,7 +99,7 @@ impl Filter {
             .collect::<Vec<_>>();
 
         for task in tasks {
-            tokio::join!(task).0.unwrap();
+            let _ = tokio::join!(task).0;
         }
     }
 
@@ -224,9 +220,9 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
-
     use std::path::Path;
+
+    use pretty_assertions::assert_eq;
 
     use crate::{
         dns::{

@@ -46,6 +46,16 @@ impl Default for ResizableBuffer {
 
 impl IO for Buffer {
     #[inline]
+    fn buffer(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    #[inline]
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer
+    }
+
+    #[inline]
     fn pos(&self) -> usize {
         self.pos
     }
@@ -64,7 +74,9 @@ impl IO for Buffer {
             Ok(self)
         }
     }
+}
 
+impl IO for ResizableBuffer {
     #[inline]
     fn buffer(&self) -> &[u8] {
         &self.buffer
@@ -74,9 +86,7 @@ impl IO for Buffer {
     fn buffer_mut(&mut self) -> &mut [u8] {
         &mut self.buffer
     }
-}
 
-impl IO for ResizableBuffer {
     #[inline]
     fn pos(&self) -> usize {
         self.pos
@@ -103,16 +113,6 @@ impl IO for ResizableBuffer {
 
         self.pos = pos;
         Ok(self)
-    }
-
-    #[inline]
-    fn buffer(&self) -> &[u8] {
-        &self.buffer
-    }
-
-    #[inline]
-    fn buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer
     }
 }
 
@@ -182,9 +182,9 @@ impl<I: IO> FromBuffer<I> for Packet {
 
 #[cfg(test)]
 mod test {
-    use pretty_assertions::assert_eq;
-
     use std::net::Ipv6Addr;
+
+    use pretty_assertions::assert_eq;
 
     use crate::dns::{
         header::Header,
