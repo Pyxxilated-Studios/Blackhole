@@ -19,7 +19,7 @@ pub struct Upstream {
 impl FromStr for Upstream {
     type Err = String;
 
-    fn from_str(value: &str) -> core::result::Result<Self, Self::Err> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.split_once(':') {
             Some((ip, port)) => Ok(Upstream {
                 ip: ip.parse().map_err(|e| format!("{e}"))?,

@@ -22,26 +22,27 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
-bstr = { version = "1", default-features = false, features = [ "alloc", "serde" ] }
-chrono = { version = "0.4", default-features = false, features = [ "clock", "serde" ] }
-clap = { version = "4" , default-features = false, features = [ "derive", "help", "std", "usage" ] }
-humantime-serde = "1.1.1"
+bstr = { version = "1", default-features = false, features = ["alloc", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+clap = { version = "4", default-features = false, features = ["derive", "help", "std", "usage"] }
+const_format = "0.2"
+humantime-serde = "1"
 nom = "7"
 num-traits = { version = "0.2", default-features = false }
 rayon = "1"
 rustc-hash = "1"
-serde = { version = "1", default-features = false, features = [ "derive" ] }
+serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-tokio = { version = "1", default-features = false, features = [ "net", "macros", "parking_lot", "rt-multi-thread", "time", "tracing" ] }
+tokio = { version = "1", default-features = false, features = ["net", "macros", "parking_lot", "rt-multi-thread", "time", "tracing"] }
 toml = "0.5"
-tracing = { version = "0.1", default-features = false, features = [ "attributes", "std" ] }
-tracing-subscriber = { version = "0.3", default-features = false, features =  [ "fmt", "parking_lot", "smallvec", "tracing-log" ] }
-ureq = { version = "2", default-features = false, features = [ "gzip", "tls" ] }
+tracing = { version = "0.1", default-features = false, features = ["attributes", "std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "parking_lot", "smallvec", "tracing-log"] }
+ureq = { version = "2", default-features = false, features = ["gzip", "tls"] }
 warp = { version = "0.3", default-features = false }
 
 [dev-dependencies]
-criterion = { version = "0.4", default-features = false, features = [ "html_reports", "plotters", "real_blackbox" ] }
+criterion = { version = "0.4", default-features = false, features = ["html_reports", "plotters", "real_blackbox"] }
 pretty_assertions = "1"
 
 [profile.release]

@@ -18,25 +18,25 @@ use nom::{
 };
 use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
 use rustc_hash::FxHashMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::Error;
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub struct Rewrite {
     pub v4: IpAddr,
     pub v6: IpAddr,
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub(crate) struct Action {
     pub rewrite: Option<Rewrite>,
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub enum Kind {
     Allow,
     Deny,
@@ -54,7 +54,7 @@ pub enum Type {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub struct Rule {
     pub(crate) domain: String,
     pub(crate) ty: Kind,
@@ -110,7 +110,7 @@ impl Rules {
             .try_fold(
                 || Vec::with_capacity(1024),
                 |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
-                    Err(_e) => Err(Error::FilterError(String::from("Invalid filter list"))),
+                    Err(_) => Err(Error::FilterError(String::from("Invalid filter list"))),
                     Ok((_, ents)) => {
                         entries.extend(ents.flatten());
                         Ok(entries)
@@ -137,18 +137,27 @@ impl Rules {
             Type::Ip(_) => return,
         };
 
-        let mut inserted = false;
-
-        let rule = domain
+        match &mut domain
             .split('.')
             .rev()
             .fold(self, |current_node, part| {
                 current_node.children.entry(part.into()).or_default()
             })
             .rule
-            .get_or_insert_with(|| {
-                inserted = true;
-                Rule {
+        {
+            Some(rule) => {
+                if let Some(ref mut action) = rule.action {
+                    if let Some(ref mut rewrite) = action.rewrite {
+                        match addr {
+                            None => (),
+                            Some(addr @ IpAddr::V4(_)) => rewrite.v4 = addr,
+                            Some(addr @ IpAddr::V6(_)) => rewrite.v6 = addr,
+                        }
+                    }
+                }
+            }
+            r => {
+                *r = Some(Rule {
                     domain,
                     ty,
                     action: match addr {
@@ -166,20 +175,7 @@ impl Rules {
                             }),
                         }),
                     },
-                }
-            });
-
-        if inserted {
-            return;
-        }
-
-        if let Some(ref mut action) = rule.action {
-            if let Some(ref mut rewrite) = action.rewrite {
-                match addr {
-                    None => (),
-                    Some(addr @ IpAddr::V4(_)) => rewrite.v4 = addr,
-                    Some(addr @ IpAddr::V6(_)) => rewrite.v6 = addr,
-                }
+                });
             }
         }
     }
@@ -215,7 +211,7 @@ impl TryFrom<&mut super::List> for Rules {
 
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
-fn ip4_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn ip4_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, String, E> {
     context(
@@ -248,7 +244,7 @@ fn ip4_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn ipv4<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn ipv4<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, IpAddr, E> {
     context(
@@ -260,13 +256,13 @@ fn ipv4<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn ip6_num<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn ip6_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, Vec<char>, E> {
     context("IP6_Num", many_m_n(1, 4, one_of("0123456789abcdefABCDEF")))(i)
 }
 
-fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn ipv6<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, IpAddr, E> {
     context(
@@ -299,7 +295,7 @@ fn ipv6<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn ip<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn ip<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, IpAddr, E> {
     context(
@@ -311,7 +307,7 @@ fn ip<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn domain<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn domain<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, String, E> {
     context(
@@ -326,7 +322,7 @@ fn domain<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn hosts<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn hosts<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, Type, E> {
     context(
@@ -337,7 +333,7 @@ fn hosts<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn adblock<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn adblock<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, Type, E> {
     context(
@@ -361,7 +357,7 @@ fn adblock<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn comment<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn comment<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, &'a str, E> {
     context(
@@ -372,7 +368,7 @@ fn comment<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
     )(i)
 }
 
-fn eol<'a, E: ParseError<&'a str> + nom::error::ContextError<&'a str>>(
+fn eol<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, &str, E> {
     context(

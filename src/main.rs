@@ -2,16 +2,20 @@
 #![forbid(unsafe_code)]
 #![feature(async_fn_in_trait)]
 
-mod cli;
-
 use std::{
     net::{IpAddr, Ipv6Addr},
     path::PathBuf,
 };
 
-use blackhole::server::udp;
 use clap::Parser;
 use tracing::{error, metadata::LevelFilter};
+use tracing_subscriber::{
+    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
+};
+
+use blackhole::{server::udp, statistics::Statistics};
+
+mod cli;
 
 fn enable_tracing() {
     let level = if let Ok(level) = std::env::var("LOG_LEVEL") {
@@ -27,15 +31,19 @@ fn enable_tracing() {
         LevelFilter::ERROR
     };
 
-    if cfg!(debug_assertions) {
-        tracing_subscriber::fmt().with_max_level(level).init();
-    } else {
-        tracing_subscriber::fmt()
-            .with_file(false)
-            .with_line_number(false)
-            .with_max_level(level)
-            .init();
-    }
+    tracing_subscriber::Registry::default()
+        .with(Statistics::default())
+        .with(
+            (if cfg!(debug_assertions) {
+                tracing_subscriber::fmt::layer()
+            } else {
+                tracing_subscriber::fmt::layer()
+                    .with_file(false)
+                    .with_line_number(false)
+            })
+            .with_filter(level),
+        )
+        .init();
 }
 
 #[tokio::main]

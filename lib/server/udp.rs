@@ -7,9 +7,10 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::{net::UdpSocket, sync::RwLock};
-use tracing::{error, info, instrument, log::trace};
+use tracing::{error, info, instrument, trace};
 
 use crate::{
     cache::Cache,
@@ -26,7 +27,7 @@ use crate::{
         Filter,
     },
     server::Upstream,
-    statistics::{Average, Request, Statistic, Statistics},
+    statistics::Request,
 };
 
 pub struct ServerBuilder {
@@ -122,8 +123,9 @@ impl Server {
     }
 }
 
-#[derive(Default, Serialize)]
-struct Handler<I> {
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Default, Serialize, Deserialize)]
+pub(crate) struct Handler<I> {
     client: String,
     question: Question,
     answers: Vec<Record>,
@@ -132,6 +134,7 @@ struct Handler<I> {
     elapsed: usize,
     timestamp: DateTime<Utc>,
     cached: bool,
+    #[serde(skip)]
     phantom: PhantomData<I>,
 }
 
@@ -333,6 +336,7 @@ where
         }
     }
 
+    #[instrument(skip(socket, packet, address))]
     async fn serve(socket: Arc<RwLock<UdpSocket>>, packet: Packet, address: SocketAddr) {
         let mut handler = Handler::<I> {
             client: address.ip().to_canonical().to_string(),
@@ -342,53 +346,41 @@ where
         };
 
         let id = packet.header.id;
-        let mut timed_out = false;
 
         let start = Instant::now();
 
-        if let Some(mut cached) = Cache::get(&packet).await {
+        let response = if let Some(mut cached) = Cache::get(&packet).await {
             cached.header.id = id;
             handler.cached = true;
             handler.rule = Filter::check(&packet);
 
-            if let Err(err) = handler.respond(&socket, cached, address).await {
-                error!("{err:?}");
-                handler.respond_error(&socket, address, id).await;
-            }
+            Ok(cached)
         } else {
-            match handler.filter(packet).await {
-                Ok(response_packet) => {
-                    let id = response_packet.header.id;
+            handler.filter(packet).await
+        };
 
-                    Cache::insert(&response_packet).await;
+        match response {
+            Ok(response_packet) => {
+                let id = response_packet.header.id;
 
-                    if let Err(err) = handler.respond(&socket, response_packet, address).await {
-                        error!("{err:?}");
-                        handler.respond_error(&socket, address, id).await;
-                    }
-                }
-                Err(err) => {
-                    if let DNSError::Timeout(_) = err {
-                        timed_out = true;
-                    } else {
-                        error!("{err:?}");
-                    }
+                Cache::insert(&response_packet).await;
+
+                if let Err(err) = handler.respond(&socket, response_packet, address).await {
+                    error!("{err:?}");
                     handler.respond_error(&socket, address, id).await;
                 }
             }
+            Err(err) => match err {
+                DNSError::Timeout(_) => {}
+                _ => {
+                    error!("{err:?}");
+                }
+            },
         }
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
 
-        if !timed_out {
-            Statistics::record(Statistic::Average(Average {
-                count: 1,
-                average: handler.elapsed,
-            }))
-            .await;
-        }
-
-        Statistics::record(Statistic::Request(handler.into())).await;
+        trace!(statistics_requests = json!({ "request": handler }).to_string(),);
     }
 }
 

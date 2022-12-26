@@ -1,23 +1,30 @@
-use std::{collections::HashMap, convert::Infallible, net::Ipv6Addr};
+use std::{collections::HashMap, net::Ipv6Addr};
 
 use serde_json::json;
 use tracing::error;
 use warp::{
-    body::BodyDeserializeError, http::Response, hyper::header::CONTENT_TYPE, Filter, Rejection,
+    body::BodyDeserializeError, filters::BoxedFilter, http::Response, hyper::header::CONTENT_TYPE,
+    Filter, Rejection, Reply,
 };
 
 use crate::{config::Config, statistics::Statistics};
 
 pub struct Server;
 
-fn statistics() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
+fn statistics() -> BoxedFilter<(impl Reply,)> {
+    let all = warp::path("statistics")
+        .and(warp::path::end())
+        .map(Server::all);
+
     warp::path!("statistics" / String)
         .and(warp::path::end())
         .and(warp::query::<HashMap<String, String>>())
-        .and_then(Server::statistics)
+        .map(|statistic: String, params| Server::statistics(&statistic, &params))
+        .or(all)
+        .boxed()
 }
 
-fn config() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
+fn config() -> BoxedFilter<(impl Reply,)> {
     warp::path!("config")
         .and(warp::path::end())
         .and(warp::get().and_then(Server::config))
@@ -33,58 +40,61 @@ fn config() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejectio
                     Err(err)
                 }
             }))
-}
-
-fn api() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Copy {
-    let all = warp::path("statistics")
-        .and(warp::path::end())
-        .and_then(Server::all);
-
-    warp::path("api").and(statistics().or(config()).or(all))
+        .boxed()
 }
 
 impl Server {
     pub async fn run(self) {
-        warp::serve(api()).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
+        let api = warp::path("api").and(statistics().or(config()));
+
+        warp::serve(api).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
     }
 
-    async fn all() -> Result<impl warp::Reply, Rejection> {
-        Ok(Response::builder()
-            .header(CONTENT_TYPE, "application/json")
-            .body(json!(Statistics::statistics().await).to_string()))
+    fn all() -> Box<(dyn warp::Reply + 'static)> {
+        Box::new(
+            Response::builder()
+                .header(CONTENT_TYPE, "application/json")
+                .body(json!(Statistics::statistics()).to_string()),
+        )
     }
 
-    async fn statistics(
-        statistic: String,
-        params: HashMap<String, String>,
-    ) -> Result<impl warp::Reply, Rejection> {
+    fn statistics(
+        statistic: &str,
+        params: &HashMap<String, String>,
+    ) -> Box<(dyn warp::Reply + 'static)> {
         let from = params.get("from");
         let to = params.get("to");
 
-        match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to).await {
-            Some(statistics) => Ok(Response::builder()
-                .header(CONTENT_TYPE, "application/json")
-                .body(json!(statistics).to_string())),
-            None => Ok(Response::builder()
-                .header(CONTENT_TYPE, "application/json")
-                .body(String::from("{}"))),
+        match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to) {
+            Some(statistics) => Box::new(
+                Response::builder()
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(json!(statistics).to_string()),
+            ),
+            None => Box::new(
+                Response::builder()
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(String::from("{}")),
+            ),
         }
     }
 
-    async fn config() -> Result<impl warp::Reply, Rejection> {
+    async fn config() -> Result<Box<dyn warp::Reply>, warp::Rejection> {
         let config = Config::get(Clone::clone).await;
 
-        Ok(Response::builder()
-            .header(CONTENT_TYPE, "application/json")
-            .body(json!(config).to_string()))
+        Ok(Box::new(
+            Response::builder()
+                .header(CONTENT_TYPE, "application/json")
+                .body(json!(config).to_string()),
+        ))
     }
 
-    async fn update_config(body: Config) -> Result<impl warp::Reply, Infallible> {
+    async fn update_config(body: Config) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
         match Config::set(|config| *config = body.clone()).await {
-            Ok(_) => Ok(Response::builder().body("")),
+            Ok(_) => Ok(Box::new(Response::builder().body(""))),
             Err(err) => {
                 error!("{err:?}");
-                Ok(Response::builder().status(500).body(""))
+                Ok(Box::new(Response::builder().status(500).body("")))
             }
         }
     }
@@ -92,10 +102,9 @@ impl Server {
 
 #[cfg(test)]
 mod test {
-    use pretty_assertions::assert_eq;
-
     use std::sync::LazyLock;
 
+    use pretty_assertions::assert_eq;
     use tokio::sync::Mutex;
     use warp::hyper::header::CONTENT_TYPE;
 
@@ -105,11 +114,11 @@ mod test {
 
     #[tokio::test]
     async fn statistics() {
-        let filter = super::api();
+        let filter = super::statistics();
 
         let worker = WORKER.lock().await;
         let response = warp::test::request()
-            .path("/api/statistics/requests")
+            .path("/statistics/requests")
             .reply(&filter)
             .await;
         drop(worker);
@@ -125,7 +134,7 @@ mod test {
 
     #[tokio::test]
     async fn all() {
-        let filter = super::api();
+        let filter = super::statistics();
 
         let worker = WORKER.lock().await;
 
@@ -137,11 +146,11 @@ mod test {
             average: 1,
         };
 
-        Statistics::record(Statistic::Request(request.clone())).await;
-        Statistics::record(Statistic::Average(average.clone())).await;
+        Statistics::record(Statistic::Request(request.clone()));
+        Statistics::record(Statistic::Average(average.clone()));
 
         let response = warp::test::request()
-            .path("/api/statistics")
+            .path("/statistics")
             .reply(&filter)
             .await;
 
@@ -153,32 +162,32 @@ mod test {
         );
         assert_eq!(
             response.body(),
-            serde_json::json!(Statistics::statistics().await)
+            serde_json::json!(Statistics::statistics())
                 .to_string()
                 .as_str()
         );
 
-        Statistics::clear().await;
+        Statistics::clear();
         drop(worker);
     }
 
     #[tokio::test]
     async fn requests() {
-        let filter = super::api();
+        let filter = super::statistics();
 
         let worker = WORKER.lock().await;
         let request = crate::statistics::Request {
             ..Default::default()
         };
 
-        Statistics::record(Statistic::Request(request.clone())).await;
+        Statistics::record(Statistic::Request(request.clone()));
 
         let response = warp::test::request()
-            .path("/api/statistics/requests")
+            .path("/statistics/requests")
             .reply(&filter)
             .await;
 
-        Statistics::clear().await;
+        Statistics::clear();
         drop(worker);
 
         assert_eq!(response.status(), 200);

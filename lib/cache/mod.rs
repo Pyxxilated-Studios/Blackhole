@@ -57,8 +57,7 @@ impl Cache {
                         hits: 1,
                         misses: 0,
                         size: 0,
-                    }))
-                    .await;
+                    }));
 
                     packet.answers.iter_mut().zip(expires.into_iter()).for_each(
                         |(answer, expire)| {
@@ -92,8 +91,7 @@ impl Cache {
                 Some(false) => size_of::<Entry>() + DNS_PACKET_SIZE,
                 None => key.capacity() + size_of::<Entry>() + DNS_PACKET_SIZE,
             },
-        }))
-        .await;
+        }));
 
         let value = packet
             .answers

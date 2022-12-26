@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::sleep};
-use tracing::{instrument, log::trace};
+use tracing::log::trace;
 
 use crate::{
     config::Config,
@@ -27,7 +27,7 @@ impl Sched {
                 Filter::reset().await;
             }
             Sched::Logs => {
-                let now = chrono::Utc::now()
+                let now = Utc::now()
                     - chrono::Duration::from_std(
                         Config::get(|config| {
                             config
@@ -45,8 +45,7 @@ impl Sched {
                     if let statistics::Statistic::Requests(requests) = statistics {
                         requests.retain(|request| request.timestamp > now);
                     }
-                })
-                .await;
+                });
             }
         }
     }
@@ -74,7 +73,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    #[instrument]
+    // #[instrument]
     async fn run() {
         loop {
             let mut soonest = Utc::now();
@@ -110,7 +109,7 @@ impl Scheduler {
         }
     }
 
-    #[instrument(skip(schedule))]
+    // #[instrument(skip(schedule))]
     async fn schedule(schedule: Schedule) -> DateTime<Utc> {
         trace!("Rescheduling {schedule:?}");
 
@@ -132,7 +131,7 @@ impl Scheduler {
             .0
     }
 
-    #[instrument]
+    // #[instrument]
     pub async fn init(schedules: Vec<Schedule>) {
         for schedule in schedules {
             schedule.name.init().await;

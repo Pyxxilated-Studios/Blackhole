@@ -1,9 +1,3 @@
-pub mod header;
-pub mod packet;
-pub mod qualified_name;
-pub mod question;
-pub mod traits;
-
 use core::{
     cmp::{Ord, Ordering},
     hash::Hash,
@@ -11,7 +5,7 @@ use core::{
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bstr::BString;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::trace;
 
@@ -19,6 +13,12 @@ use crate::dns::{
     qualified_name::QualifiedName,
     traits::{FromBuffer, WriteTo, IO},
 };
+
+pub mod header;
+pub mod packet;
+pub mod qualified_name;
+pub mod question;
+pub mod traits;
 
 #[derive(Debug, Error)]
 pub enum DNSError {
@@ -35,7 +35,7 @@ pub enum DNSError {
 pub(crate) type Result<T> = std::result::Result<T, DNSError>;
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RR {
     pub domain: QualifiedName,
     pub query_type: QueryType,
@@ -69,7 +69,7 @@ impl<'a, T: IO> WriteTo<'a, T> for RR {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Copy, Clone, Eq, Default, Serialize)]
+#[derive(Copy, Clone, Eq, Default, Serialize, Deserialize)]
 pub struct Ttl(pub u32);
 
 impl From<u32> for Ttl {
@@ -117,7 +117,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Ttl {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ResultCode {
     NOERROR = 0,
     FORMERR = 1,
@@ -160,7 +160,7 @@ impl From<ResultCode> for u8 {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(PartialEq, Eq, Clone, Hash, Copy, PartialOrd, Ord, Serialize)]
+#[derive(PartialEq, Eq, Clone, Hash, Copy, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,
@@ -257,7 +257,7 @@ impl<'a, T: IO> WriteTo<'a, T> for QueryType {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Record {
     UNKNOWN {
         record: RR,
@@ -730,9 +730,9 @@ impl<I: IO> FromBuffer<I> for Record {
 
                 let Some(sign_len) =
                     (record.data_length as usize).checked_sub(buffer.pos() - start)
-                else {
-                    return Err(DNSError::InvalidPacket);
-                };
+                    else {
+                        return Err(DNSError::InvalidPacket);
+                    };
 
                 Ok(Record::RRSIG {
                     record,
@@ -765,7 +765,7 @@ impl<I: IO> FromBuffer<I> for Record {
                 let flags = buffer.read()?;
                 let protocol = buffer.read()?;
                 let algorithm = buffer.read()?;
-                let Some(pub_key_length) = (record.data_length as usize).checked_sub(4) else { return Err(DNSError::InvalidPacket) };
+                let Some(pub_key_length) = (record.data_length as usize).checked_sub(4) else { return Err(DNSError::InvalidPacket); };
                 let public_key = buffer.read_range(pub_key_length)?.to_vec();
 
                 Ok(Record::DNSKEY {

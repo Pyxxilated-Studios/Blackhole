@@ -1,5 +1,5 @@
 use bstr::{BString, ByteSlice, ByteVec};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::dns::{
     traits::{WriteTo, IO},
@@ -11,7 +11,7 @@ use super::traits::FromBuffer;
 pub const MAX_QUALIFIED_NAME_LENGTH: usize = 2048;
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 pub struct QualifiedName(pub BString);
 
 impl QualifiedName {

@@ -1,15 +1,21 @@
-use std::{hash::BuildHasherDefault, sync::LazyLock};
+use std::{
+    fmt::Debug,
+    hash::BuildHasherDefault,
+    sync::{LazyLock, RwLock},
+};
 
 use chrono::{DateTime, Utc};
+use const_format::concatcp;
 use rustc_hash::FxHashMap;
-use serde::Serialize;
-use tokio::sync::RwLock;
-use tracing::{instrument, log::trace};
+use serde::{Deserialize, Serialize};
+use tracing::{field::Visit, instrument, log::trace, Subscriber};
+use tracing_subscriber::{registry::LookupSpan, Layer};
 
 use crate::{
     dns::Record as Answer,
     dns::{question::Question, ResultCode},
     filter::rules::Rule,
+    server::udp::Handler,
 };
 
 static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
@@ -17,6 +23,9 @@ static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default)
 pub const REQUESTS: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
+
+pub(crate) const STATISTICS_PREFIX: &str = "statistics";
+pub(crate) const REQUESTS_PREFIX: &str = concatcp!(STATISTICS_PREFIX, "_", REQUESTS);
 
 impl Statistic {
     fn record(self, stats: &mut FxHashMap<&'static str, Statistic>) {
@@ -107,8 +116,55 @@ pub enum Statistic {
     Cache(Cache),
 }
 
+struct StatisticsVisitor;
+
+impl Visit for StatisticsVisitor {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        match field.name().strip_prefix(REQUESTS_PREFIX) {
+            Some(_) => {
+                #[cfg_attr(any(debug_assertions, test), derive(Debug))]
+                #[derive(Deserialize)]
+                struct Request<I> {
+                    request: Handler<I>,
+                }
+
+                let request = serde_json::from_str::<Request<()>>(value).unwrap().request;
+                let request: crate::statistics::Request = request.into();
+                Statistics::record(crate::statistics::Statistic::Average(
+                    crate::statistics::Average {
+                        count: 1,
+                        average: request.elapsed,
+                    },
+                ));
+                Statistics::record(crate::statistics::Statistic::Request(request));
+            }
+            _ => {
+                println!(" record_str: {} {}", field.name(), value);
+            }
+        }
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        println!(" record_debug: field={} value={:?}", field.name(), value);
+    }
+}
+
 pub struct Statistics {
     statistics: FxHashMap<&'static str, Statistic>,
+}
+
+impl<S> Layer<S> for Statistics
+where
+    S: Subscriber + for<'span> LookupSpan<'span> + Debug,
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut visitor = StatisticsVisitor;
+        event.record(&mut visitor);
+    }
 }
 
 impl Default for Statistics {
@@ -121,20 +177,21 @@ impl Default for Statistics {
 
 impl Statistics {
     #[inline]
-    pub async fn record(value: Statistic) {
-        let mut statistics = STATISTICS.write().await;
-        value.record(&mut statistics.statistics);
+    pub fn record(value: Statistic) {
+        if let Ok(mut lock) = STATISTICS.write() {
+            value.record(&mut lock.statistics);
+        }
     }
 
     #[instrument]
-    pub async fn retrieve(
+    pub fn retrieve(
         statistic: &str,
         from: Option<&String>,
         to: Option<&String>,
     ) -> Option<Statistic> {
         trace!("Retrieving {statistic}: {from:?} -- {to:?}");
 
-        match &STATISTICS.read().await.statistics.get(statistic) {
+        match &STATISTICS.read().unwrap().statistics.get(statistic) {
             Some(Statistic::Requests(ref requests)) => {
                 let len = requests.len();
 
@@ -157,25 +214,30 @@ impl Statistics {
     }
 
     #[inline]
-    pub async fn statistics() -> FxHashMap<&'static str, Statistic> {
-        STATISTICS.read().await.statistics.clone()
+    pub fn statistics() -> FxHashMap<&'static str, Statistic> {
+        if let Ok(lock) = STATISTICS.read() {
+            lock.statistics.clone()
+        } else {
+            FxHashMap::default()
+        }
     }
 
     #[inline]
-    pub async fn clear() {
-        STATISTICS.write().await.statistics = FxHashMap::default();
+    pub fn clear() {
+        if let Ok(mut lock) = STATISTICS.write() {
+            lock.statistics = FxHashMap::default();
+        }
     }
 
-    pub async fn modify<F>(statistic: &str, f: F)
+    pub fn modify<F>(statistic: &str, f: F)
     where
         F: FnOnce(&mut Statistic),
     {
-        STATISTICS
-            .write()
-            .await
-            .statistics
-            .get_mut(statistic)
-            .map(f)
-            .unwrap_or_default();
+        if let Ok(mut lock) = STATISTICS.write() {
+            lock.statistics
+                .get_mut(statistic)
+                .map(f)
+                .unwrap_or_default();
+        }
     }
 }
