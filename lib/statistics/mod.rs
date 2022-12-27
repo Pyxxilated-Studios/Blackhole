@@ -120,33 +120,26 @@ struct StatisticsVisitor;
 
 impl Visit for StatisticsVisitor {
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        match field.name().strip_prefix(REQUESTS_PREFIX) {
-            Some(_) => {
-                #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-                #[derive(Deserialize)]
-                struct Request<I> {
-                    request: Handler<I>,
-                }
+        if field.name().starts_with(REQUESTS_PREFIX) {
+            #[cfg_attr(any(debug_assertions, test), derive(Debug))]
+            #[derive(Deserialize)]
+            struct Request<I> {
+                request: Handler<I>,
+            }
 
-                let request = serde_json::from_str::<Request<()>>(value).unwrap().request;
-                let request: crate::statistics::Request = request.into();
-                Statistics::record(crate::statistics::Statistic::Average(
-                    crate::statistics::Average {
-                        count: 1,
-                        average: request.elapsed,
-                    },
-                ));
-                Statistics::record(crate::statistics::Statistic::Request(request));
-            }
-            _ => {
-                println!(" record_str: {} {}", field.name(), value);
-            }
+            let request = serde_json::from_str::<Request<()>>(value).unwrap().request;
+            let request: crate::statistics::Request = request.into();
+            Statistics::record(crate::statistics::Statistic::Average(
+                crate::statistics::Average {
+                    count: 1,
+                    average: request.elapsed,
+                },
+            ));
+            Statistics::record(crate::statistics::Statistic::Request(request));
         }
     }
 
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        println!(" record_debug: field={} value={:?}", field.name(), value);
-    }
+    fn record_debug(&mut self, _field: &tracing::field::Field, _value: &dyn std::fmt::Debug) {}
 }
 
 pub struct Statistics {

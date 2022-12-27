@@ -28,7 +28,7 @@ fn enable_tracing() {
     } else if cfg!(debug_assertions) {
         LevelFilter::TRACE
     } else {
-        LevelFilter::ERROR
+        LevelFilter::INFO
     };
 
     tracing_subscriber::Registry::default()
@@ -41,6 +41,8 @@ fn enable_tracing() {
                     .with_file(false)
                     .with_line_number(false)
             })
+            .compact()
+            .with_ansi(true)
             .with_filter(level),
         )
         .init();

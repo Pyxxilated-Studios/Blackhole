@@ -117,12 +117,16 @@ impl Filter {
         .await
         .unwrap_or(std::time::Duration::ZERO);
 
-        let is_past_due = SystemTime::now()
-            .duration_since(path.metadata()?.modified()?)
-            .unwrap_or_default()
-            >= schedule;
+        let is_past_due = if path.exists() {
+            SystemTime::now()
+                .duration_since(path.metadata()?.modified()?)
+                .unwrap_or_default()
+                >= schedule
+        } else {
+            true
+        };
 
-        if !path.exists() || is_past_due {
+        if is_past_due {
             info!("Fetching {}", list.url);
 
             let response = ureq::get(&list.url).call()?;
