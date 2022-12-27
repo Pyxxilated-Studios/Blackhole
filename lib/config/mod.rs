@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 
 use crate::{filter::List, schedule::Schedule, server::Upstream};
 
@@ -55,8 +55,9 @@ impl Load for PathBuf {
     /// Should the file not exist in readable form, this will fail. If the file also
     /// isn't valid toml this will fail.
     ///
-    #[instrument(level = "info", ret, err, skip(self, config), fields(file = self.to_str()))]
+    #[instrument(level = "info", err, skip(self, config), fields(file = self.to_str()))]
     async fn load(&self, config: &mut Config) -> std::io::Result<()> {
+        info!("Loading config");
         *CONFIG_FILE.write().await = self.to_string_lossy().to_string();
 
         let conf = std::fs::read_to_string(self)?;

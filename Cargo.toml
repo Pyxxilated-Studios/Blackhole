@@ -37,7 +37,7 @@ thiserror = "1"
 tokio = { version = "1", default-features = false, features = ["net", "macros", "parking_lot", "rt-multi-thread", "time", "tracing"] }
 toml = "0.5"
 tracing = { version = "0.1", default-features = false, features = ["attributes", "std"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "parking_lot", "smallvec", "tracing-log"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "fmt", "parking_lot", "smallvec", "tracing-log"] }
 ureq = { version = "2", default-features = false, features = ["gzip", "tls"] }
 warp = { version = "0.3", default-features = false }
 
