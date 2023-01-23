@@ -117,20 +117,15 @@ impl<'a, T: IO> WriteTo<'a, T> for Ttl {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub enum ResultCode {
+    #[default]
     NOERROR = 0,
     FORMERR = 1,
     SERVFAIL = 2,
     NXDOMAIN = 3,
     NOTIMPLEMENTED = 4,
     REFUSED = 5,
-}
-
-impl Default for ResultCode {
-    fn default() -> Self {
-        ResultCode::NOERROR
-    }
 }
 
 impl From<u8> for ResultCode {
