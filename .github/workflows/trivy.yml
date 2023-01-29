@@ -1,4 +1,4 @@
-name: trivy
+name: Analyze - Docker Image
 
 on:
   push:
