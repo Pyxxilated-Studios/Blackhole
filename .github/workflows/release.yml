@@ -15,6 +15,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  name: "Release"
   build:
     runs-on: ubuntu-latest
 

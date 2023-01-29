@@ -2,13 +2,13 @@ name: rust-clippy analyze
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "**/*.rs"
       - "Cargo.toml"
       - "Cargo.lock"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "**/*.rs"
       - "Cargo.toml"
@@ -16,7 +16,7 @@ on:
 
 jobs:
   rust-clippy-analyze:
-    name: Run rust-clippy analyzing
+    name: "Analyze: Rust with Clippy"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,13 +35,11 @@ jobs:
         run: cargo install clippy-sarif sarif-fmt
 
       - name: Run rust-clippy
-        run: cargo clippy
-          --all-features
-          --message-format=json
-          -- -D clippy::pedantic
-          -A clippy::cast_possible_truncation
-          -A clippy::must-use-candidate
-          -A clippy::cast-sign-loss | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        run:
+          cargo clippy --all-features --message-format=json -- -D
+          clippy::pedantic -A clippy::cast_possible_truncation -A
+          clippy::must-use-candidate -A clippy::cast-sign-loss | clippy-sarif |
+          tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
       - name: Upload analysis results to GitHub

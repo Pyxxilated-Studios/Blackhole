@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate a changelog
+      - name: Generate changelog
         uses: orhun/git-cliff-action@v2
         id: git-cliff
         with:
@@ -26,7 +26,7 @@ jobs:
         env:
           OUTPUT: CHANGES.md
 
-      - name: Set the release body
+      - name: Set release body
         id: release
         shell: bash
         run: |
@@ -36,7 +36,7 @@ jobs:
           r="${r//$'\r'/'%0D'}"   # Multiline escape sequences for '\r'
           echo "name=RELEASE_BODY::$r" >> $GITHUB_OUTPUT
 
-      - name: Upload the binary releases
+      - name: Upload releases
         uses: svenstaro/upload-release-action@v2
         with:
           file: ${{ steps.git-cliff.outputs.changelog }}
