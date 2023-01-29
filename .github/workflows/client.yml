@@ -3,10 +3,9 @@ name: Analyze - Client
 on:
   pull_request:
     branches: ["main"]
-    paths-ignore:
-      - ".github/ISSUE_TEMPLATE/**"
-      - "*.md"
-      - ".*ignore"
+    paths:
+      - "**/*.svelte"
+      - "**/*.ts"
 
 env:
   CARGO_TERM_COLOR: always
