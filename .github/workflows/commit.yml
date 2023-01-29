@@ -1,4 +1,4 @@
-name: Lint Commits
+name: Analyze - Commits
 
 on: [pull_request]
 

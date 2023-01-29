@@ -1,4 +1,4 @@
-name: Coverage
+name: Analyze - Code Coverage
 
 on:
   push:
