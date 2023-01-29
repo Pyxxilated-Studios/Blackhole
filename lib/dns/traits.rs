@@ -36,6 +36,14 @@ pub trait IO {
     fn buffer_mut(&mut self) -> &mut [u8];
 
     ///
+    /// Insert a value at a position
+    ///
+    /// # Errors
+    /// If the buffer cannot be grown to accomodate the new value
+    ///
+    fn insert(&mut self, pos: usize, value: u16) -> Result<()>;
+
+    ///
     /// Current position within buffer
     ///
     fn pos(&self) -> usize;

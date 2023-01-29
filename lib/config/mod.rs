@@ -29,7 +29,7 @@ pub enum Error {
 pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
-    #[serde(alias = "filter", rename(serialize = "filter"))]
+    #[serde(alias = "filter", rename(serialize = "filter"), default)]
     pub filters: Vec<List>,
     #[serde(alias = "schedule", rename(serialize = "schedule"))]
     pub schedules: Vec<Schedule>,
