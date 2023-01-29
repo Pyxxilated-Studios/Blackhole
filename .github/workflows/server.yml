@@ -1,4 +1,4 @@
-name: Analyze - Rust with Clippy
+name: Analyze - Server
 
 on:
   push:
@@ -15,12 +15,12 @@ on:
       - "Cargo.lock"
 
 jobs:
-  rust-clippy-analyze:
-    name: Analyze - Rust with Clippy
+  analyze-clippy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -47,3 +47,21 @@ jobs:
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
+
+  test-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: clippy
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Test Server
+        run: cargo nextest run
