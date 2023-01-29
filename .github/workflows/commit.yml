@@ -1,10 +1,10 @@
 name: Lint Commits
 
-on: [ pull_request ]
+on: [pull_request]
 
 jobs:
   committed:
-    name: Lint Commits
+    name: "Analyze: Commits"
     runs-on: ubuntu-latest
 
     steps:

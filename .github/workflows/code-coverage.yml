@@ -2,12 +2,13 @@ name: Coverage
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   coverage:
+    name: "Analyze: Code Coverage"
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
@@ -24,7 +25,9 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Collect coverage data
-        run: cargo llvm-cov --all-features --workspace nextest --lcov --output-path lcov.info
+        run:
+          cargo llvm-cov --all-features --workspace nextest --lcov --output-path
+          lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
