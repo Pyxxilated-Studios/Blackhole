@@ -2,7 +2,7 @@ name: Changelog
 
 on:
   push:
-    tags: [ "v*" ]
+    tags: ["v*"]
 
 jobs:
   changelog:
@@ -34,7 +34,7 @@ jobs:
           r="${r//'%'/'%25'}"     # Multiline escape sequences for %
           r="${r//$'\n'/'%0A'}"   # Multiline escape sequences for '\n'
           r="${r//$'\r'/'%0D'}"   # Multiline escape sequences for '\r'
-          echo "::set-output name=RELEASE_BODY::$r"
+          echo "name=RELEASE_BODY::$r" >> $GITHUB_OUTPUT
 
       - name: Upload the binary releases
         uses: svenstaro/upload-release-action@v2
