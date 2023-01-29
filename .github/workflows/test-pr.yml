@@ -13,7 +13,7 @@ env:
 
 jobs:
   client:
-    name: "Analyze: Client Testing"
+    name: Analyze - Client Testing
     runs-on: ubuntu-latest
 
     steps:

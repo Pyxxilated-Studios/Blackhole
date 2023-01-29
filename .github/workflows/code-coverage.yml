@@ -8,7 +8,7 @@ on:
 
 jobs:
   coverage:
-    name: "Analyze: Code Coverage"
+    name: Analyze - Code Coverage
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
