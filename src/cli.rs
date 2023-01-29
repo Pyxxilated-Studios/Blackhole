@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use blackhole::{config::Load, server::Upstream};
+use blackhole::{
+    config::{Error, Load},
+    server::Upstream,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -25,7 +28,7 @@ pub struct Cli {
 
 impl Load for Cli {
     #[allow(clippy::unused_async)]
-    async fn load(&self, config: &mut blackhole::config::Config) -> std::io::Result<()> {
+    async fn load(&self, config: &mut blackhole::config::Config) -> Result<(), Error> {
         config.upstreams.extend(self.upstreams.clone());
 
         Ok(())
