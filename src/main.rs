@@ -2,10 +2,7 @@
 #![forbid(unsafe_code)]
 #![feature(async_fn_in_trait)]
 
-use std::{
-    net::{IpAddr, Ipv6Addr},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use clap::Parser;
 use futures::StreamExt;
@@ -16,10 +13,7 @@ use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
-use blackhole::{
-    server::{tcp, udp},
-    statistics::Statistics,
-};
+use blackhole::statistics::Statistics;
 
 mod cli;
 
@@ -60,55 +54,25 @@ async fn main() {
 
     let mut cli = cli::Cli::parse();
 
-    let udp_server = match udp::Server::builder()
-        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
-        .on(cli.port)
-        .build()
-        .await
-    {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
-        Err(err) => {
-            error!("{err}");
-            return;
-        }
-    };
-
-    let tcp_server = match tcp::Server::builder()
-        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
-        .on(cli.port)
-        .build()
-        .await
-    {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
-        Err(err) => {
-            error!("{err}");
-            return;
-        }
-    };
-
     blackhole::config::Config::load(
         cli.config
-            .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml"))
-            .clone(),
+            .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml")),
     )
     .await
     .unwrap_or_default();
-    blackhole::config::Config::load(cli).await.unwrap();
+    blackhole::config::Config::load(&cli).await.unwrap();
 
-    let scheduler = tokio::spawn(async move {
-        blackhole::schedule::Scheduler::init(
-            blackhole::config::Config::get(|config| config.schedules.clone()).await,
-        )
-        .await;
-    });
-
-    let api_server = tokio::spawn(async move { blackhole::api::Server.run().await });
+    let blackhole_handle = match blackhole::spawn().await {
+        Ok(handle) => handle,
+        Err(err) => {
+            error!("{err}");
+            return;
+        }
+    };
 
     let mut signals =
         Signals::new([SIGTERM, SIGINT, SIGQUIT]).expect("Could not set signal handler");
-    let signal_handle = signals.handle();
-
-    let signals_task = tokio::spawn(async move {
+    let signals_handle = tokio::spawn(async move {
         while let Some(signal) = signals.next().await {
             match signal {
                 SIGTERM | SIGINT | SIGQUIT => {
@@ -121,12 +85,7 @@ async fn main() {
     });
 
     tokio::select! {
-        _ = udp_server => {}
-        _ = tcp_server => {}
-        _ = api_server => {}
-        _ = scheduler => {}
-        _ = signals_task => {
-            signal_handle.close();
-        }
+        _ = blackhole_handle => {}
+        _ = signals_handle => {}
     }
 }
