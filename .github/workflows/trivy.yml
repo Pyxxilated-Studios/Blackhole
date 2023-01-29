@@ -15,7 +15,7 @@ env:
 
 jobs:
   build:
-    name: "Analyze: Docker Image"
+    name: Analyze - Docker Image
 
     permissions:
       contents: read # for actions/checkout to fetch code
