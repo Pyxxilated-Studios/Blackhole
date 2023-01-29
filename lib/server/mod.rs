@@ -2,6 +2,7 @@ use std::{net::IpAddr, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod handler;
 pub mod tcp;
 pub mod udp;
 

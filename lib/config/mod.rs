@@ -27,9 +27,15 @@ pub enum Error {
     Deserialization(#[from] toml::de::Error),
 }
 
+const fn default_port() -> u16 {
+    53
+}
+
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
     #[serde(alias = "filter", rename(serialize = "filter"), default)]
@@ -70,6 +76,8 @@ impl Load for PathBuf {
         config.filters.extend(conf.filters);
         config.schedules.extend(conf.schedules);
 
+        config.port = conf.port;
+
         Ok(())
     }
 }
@@ -82,7 +90,7 @@ impl Config {
     /// This can fail if the configuration profile fails to load,
     /// see [`Load`]
     ///
-    pub async fn load<C: Load + 'static>(loader: C) -> Result<(), Error> {
+    pub async fn load<C: Load + 'static>(loader: &C) -> Result<(), Error> {
         let mut config = CONFIG.write().await;
         loader.load(&mut config).await?;
 

@@ -17,10 +17,9 @@ pub struct Cli {
         short,
         long,
         value_name = "PORT",
-        help = "Port to have the server listen on",
-        default_value_t = 53
+        help = "Port to have the server listen on"
     )]
-    pub port: u16,
+    pub port: Option<u16>,
 
     #[arg(short, long = "upstream", value_name = "UPSTREAM")]
     upstreams: Vec<Upstream>,
@@ -30,6 +29,9 @@ impl Load for Cli {
     #[allow(clippy::unused_async)]
     async fn load(&self, config: &mut blackhole::config::Config) -> Result<(), Error> {
         config.upstreams.extend(self.upstreams.clone());
+        if let Some(port) = self.port {
+            config.port = port;
+        }
 
         Ok(())
     }

@@ -105,8 +105,10 @@ impl IO for ResizableBuffer {
 
     #[inline]
     fn insert(&mut self, pos: usize, value: u16) -> Result<()> {
-        self.buffer.insert(pos, ((value & 0xFF00) >> 8) as u8);
-        self.buffer.insert(pos + 1, (value & 0xFF) as u8);
+        self.buffer.splice(
+            pos..pos,
+            [((value & 0xFF00) >> 8) as u8, (value & 0xFF) as u8],
+        );
         Ok(())
     }
 

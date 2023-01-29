@@ -15,7 +15,7 @@ use crate::{
     dns::Record as Answer,
     dns::{question::Question, ResultCode},
     filter::rules::Rule,
-    server::udp::Handler,
+    server::handler::Handler,
 };
 
 static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
@@ -123,8 +123,8 @@ impl Visit for StatisticsVisitor {
         if field.name().starts_with(REQUESTS_PREFIX) {
             #[cfg_attr(any(debug_assertions, test), derive(Debug))]
             #[derive(Deserialize)]
-            struct Request<I> {
-                request: Handler<I>,
+            struct Request<Buff> {
+                request: Handler<Buff>,
             }
 
             let request = serde_json::from_str::<Request<()>>(value).unwrap().request;
@@ -182,7 +182,7 @@ impl Statistics {
         from: Option<&String>,
         to: Option<&String>,
     ) -> Option<Statistic> {
-        trace!("Retrieving {statistic}: {from:?} -- {to:?}");
+        trace!("Retrieving");
 
         match &STATISTICS.read().unwrap().statistics.get(statistic) {
             Some(Statistic::Requests(ref requests)) => {
