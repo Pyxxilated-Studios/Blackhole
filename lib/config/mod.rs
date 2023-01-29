@@ -22,6 +22,9 @@ pub enum Error {
 
     #[error("Serialisation Error: {0}")]
     Serialization(#[from] toml::ser::Error),
+
+    #[error("Deserialisation Error: {0}")]
+    Deserialization(#[from] toml::de::Error),
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
@@ -44,7 +47,7 @@ pub trait Load {
     /// This may error in several cases, which should be documented
     /// in the implementation.
     ///
-    async fn load(&self, config: &mut Config) -> std::io::Result<()>;
+    async fn load(&self, config: &mut Config) -> Result<(), Error>;
 }
 
 impl Load for PathBuf {
@@ -56,7 +59,7 @@ impl Load for PathBuf {
     /// isn't valid toml this will fail.
     ///
     #[instrument(level = "info", err, skip(self, config), fields(file = self.to_str()))]
-    async fn load(&self, config: &mut Config) -> std::io::Result<()> {
+    async fn load(&self, config: &mut Config) -> Result<(), Error> {
         info!("Loading config");
         *CONFIG_FILE.write().await = self.to_string_lossy().to_string();
 
@@ -79,7 +82,7 @@ impl Config {
     /// This can fail if the configuration profile fails to load,
     /// see [`Load`]
     ///
-    pub async fn load<C: Load + 'static>(loader: C) -> std::io::Result<()> {
+    pub async fn load<C: Load + 'static>(loader: C) -> Result<(), Error> {
         let mut config = CONFIG.write().await;
         loader.load(&mut config).await?;
 
