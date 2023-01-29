@@ -15,8 +15,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  name: Release
   build:
+    name: Release
     runs-on: ubuntu-latest
 
     strategy:
