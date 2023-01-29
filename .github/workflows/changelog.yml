@@ -8,6 +8,7 @@ jobs:
   changelog:
     name: Generate Changelog
     runs-on: ubuntu-latest
+
     outputs:
       release_body: ${{ steps.release.outputs.RELEASE_BODY }}
 
