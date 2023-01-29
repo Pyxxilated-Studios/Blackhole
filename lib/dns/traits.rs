@@ -35,6 +35,8 @@ pub trait IO {
 
     fn buffer_mut(&mut self) -> &mut [u8];
 
+    fn insert(&mut self, pos: usize, value: u16) -> Result<()>;
+
     ///
     /// Current position within buffer
     ///

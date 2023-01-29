@@ -8,12 +8,18 @@ use std::{
 };
 
 use clap::Parser;
-use tracing::{error, metadata::LevelFilter};
+use futures::StreamExt;
+use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
+use signal_hook_tokio::Signals;
+use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
-use blackhole::{server::udp, statistics::Statistics};
+use blackhole::{
+    server::{tcp, udp},
+    statistics::Statistics,
+};
 
 mod cli;
 
@@ -67,6 +73,19 @@ async fn main() {
         }
     };
 
+    let tcp_server = match tcp::Server::builder()
+        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
+        .on(cli.port)
+        .build()
+        .await
+    {
+        Ok(server) => tokio::spawn(async move { server.run().await }),
+        Err(err) => {
+            error!("{err}");
+            return;
+        }
+    };
+
     blackhole::config::Config::load(
         cli.config
             .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml"))
@@ -85,9 +104,29 @@ async fn main() {
 
     let api_server = tokio::spawn(async move { blackhole::api::Server.run().await });
 
+    let mut signals =
+        Signals::new([SIGTERM, SIGINT, SIGQUIT]).expect("Could not set signal handler");
+    let signal_handle = signals.handle();
+
+    let signals_task = tokio::spawn(async move {
+        while let Some(signal) = signals.next().await {
+            match signal {
+                SIGTERM | SIGINT | SIGQUIT => {
+                    info!("Shutting down");
+                    return;
+                }
+                _ => unreachable!(),
+            }
+        }
+    });
+
     tokio::select! {
         _ = udp_server => {}
+        _ = tcp_server => {}
         _ = api_server => {}
         _ = scheduler => {}
+        _ = signals_task => {
+            signal_handle.close();
+        }
     }
 }

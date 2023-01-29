@@ -56,6 +56,22 @@ impl IO for Buffer {
     }
 
     #[inline]
+    fn insert(&mut self, pos: usize, value: u16) -> Result<()> {
+        if self.pos() + 2 >= DNS_PACKET_SIZE {
+            return Err(DNSError::EndOfBuffer);
+        }
+
+        let buff = self.buffer;
+        self.buffer[pos] = ((value & 0xFF00) >> 8) as u8;
+        self.buffer[pos + 1] = (value & 0xFF) as u8;
+
+        self.buffer[..pos].copy_from_slice(&buff[..pos]);
+        self.buffer[(pos + 2)..buff.len()].copy_from_slice(&buff[(pos + 2 - 2)..(buff.len() - 2)]);
+
+        Ok(())
+    }
+
+    #[inline]
     fn pos(&self) -> usize {
         self.pos
     }
@@ -85,6 +101,13 @@ impl IO for ResizableBuffer {
     #[inline]
     fn buffer_mut(&mut self) -> &mut [u8] {
         &mut self.buffer
+    }
+
+    #[inline]
+    fn insert(&mut self, pos: usize, value: u16) -> Result<()> {
+        self.buffer.insert(pos, ((value & 0xFF00) >> 8) as u8);
+        self.buffer.insert(pos + 1, (value & 0xFF) as u8);
+        Ok(())
     }
 
     #[inline]
@@ -141,6 +164,7 @@ macro_rules! impl_try_from {
 
 impl_try_from!(Buffer, ResizableBuffer);
 
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Clone, Default)]
 pub struct Packet {
     pub header: Header,

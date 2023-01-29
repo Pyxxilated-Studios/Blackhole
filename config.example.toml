@@ -2,9 +2,9 @@
 ip = "9.9.9.9"
 port = 53
 
-[[filter]]
-name = "Energized"
-url = "https://block.energized.pro/spark/formats/hosts"
+# [[filter]]
+# name = "Energized"
+# url = "https://block.energized.pro/spark/formats/hosts"
 
 [[schedule]]
 name = "Filters"

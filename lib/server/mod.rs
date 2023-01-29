@@ -2,6 +2,7 @@ use std::{net::IpAddr, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
+pub mod tcp;
 pub mod udp;
 
 fn default_port() -> u16 {
