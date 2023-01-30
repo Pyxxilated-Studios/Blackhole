@@ -31,32 +31,32 @@ fn packet() -> Packet {
             resource_entries: 0,
         },
         questions: vec![Question {
-            name: QualifiedName("example.com".into()),
+            name: QualifiedName("gmail.com".into()),
             qtype: QueryType::MX,
             class: 0,
         }],
         answers: vec![
             Record::MX {
                 record: RR {
-                    domain: QualifiedName("example.com".into()),
+                    domain: QualifiedName("gmail.com".into()),
                     ttl: Ttl(3600),
                     query_type: QueryType::MX,
                     class: 1,
                     data_length: 20,
                 },
                 priority: 10,
-                host: QualifiedName("mail.example.com".into()),
+                host: QualifiedName("mail.gmail.com".into()),
             },
             Record::MX {
                 record: RR {
-                    domain: QualifiedName("example.com".into()),
+                    domain: QualifiedName("gmail.com".into()),
                     ttl: Ttl(3600),
                     query_type: QueryType::MX,
                     class: 1,
                     data_length: 23,
                 },
                 priority: 20,
-                host: QualifiedName("mailsec.example.com".into()),
+                host: QualifiedName("mailsec.gmail.com".into()),
             },
         ],
         authorities: vec![],

@@ -61,9 +61,11 @@ pub async fn spawn() -> Result<JoinHandle<()>, DNSError> {
     let api_server = tokio::spawn(async move { api::Server.run().await });
 
     Ok(tokio::spawn(async move {
-        udp_server.await.unwrap().unwrap();
-        tcp_server.await.unwrap().unwrap();
-        scheduler_handle.await.unwrap();
-        api_server.await.unwrap();
+        tokio::select! {
+            _ = udp_server => {}
+            _ = tcp_server => {}
+            _ = scheduler_handle => {}
+            _ = api_server => {}
+        }
     }))
 }
