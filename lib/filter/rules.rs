@@ -8,13 +8,13 @@ use std::{
 use bstr::BString;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while, take_while1},
+    bytes::complete::{tag, take_while1},
     character::complete::{line_ending, not_line_ending, one_of, space0, space1},
     combinator::{eof, map, opt, peek},
     error::{context, ContextError, ParseError, VerboseError},
     multi::{count, many_m_n, many_till, separated_list1},
-    sequence::{terminated, tuple},
-    AsChar, IResult,
+    sequence::{pair, terminated, tuple},
+    IResult,
 };
 use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
 use rustc_hash::FxHashMap;
@@ -110,7 +110,7 @@ impl Rules {
             .try_fold(
                 || Vec::with_capacity(1024),
                 |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
-                    Err(_) => Err(Error::FilterError(String::from("Invalid filter list"))),
+                    Err(err) => Err(Error::FilterError(format!("Invalid filter list: {err}"))),
                     Ok((_, ents)) => {
                         entries.extend(ents.flatten());
                         Ok(entries)
@@ -246,55 +246,223 @@ fn ip4_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn ipv4<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
+) -> IResult<&'a str, String, E> {
     context(
         "IPV4",
         map(
             tuple((count(terminated(ip4_num, tag(".")), 3), ip4_num)),
-            |(a, b)| IpAddr::from_str(&format!("{}.{b}", a.join("."))).unwrap(),
+            |(a, b)| format!("{}.{b}", a.join(".")),
         ),
     )(i)
 }
 
 fn ip6_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> IResult<&'a str, Vec<char>, E> {
-    context("IP6_Num", many_m_n(1, 4, one_of("0123456789abcdefABCDEF")))(i)
-}
-
-fn ipv6<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
+) -> IResult<&'a str, String, E> {
     context(
-        "IPV6",
-        map(
-            tuple((
-                alt((
-                    map(tuple((opt(ip6_num), tag("::"))), |(a, b)| {
-                        format!("{}{b}", a.into_iter().flatten().collect::<String>())
-                    }),
-                    map(count(terminated(ip6_num, tag(":")), 7), |parts| {
-                        parts
-                            .into_iter()
-                            .map(|v| v.into_iter().collect::<String>())
-                            .reduce(|mut acc, e| {
-                                acc.push(':');
-                                acc.push_str(&e);
-                                acc
-                            })
-                            .unwrap()
-                    }),
-                )),
-                ip6_num,
-                opt(tuple((tag("%"), take_while(AsChar::is_alphanum)))),
-            )),
-            |(a, b, _)| {
-                IpAddr::from_str(&format!("{a}{}", b.into_iter().collect::<String>())).unwrap()
-            },
-        ),
+        "IP6_Num",
+        map(many_m_n(1, 4, one_of("0123456789abcdef")), |a| {
+            a.iter().collect()
+        }),
     )(i)
 }
 
+fn ls32<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, String, E> {
+    context(
+        "ls32",
+        alt((
+            map(tuple((ip6_num, tag(":"), ip6_num)), |(a, b, c)| {
+                format!("{a}{b}{c}")
+            }),
+            ipv4,
+        )),
+    )(i)
+}
+
+#[allow(clippy::too_many_lines)]
+fn ipv6<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, String, E> {
+    context(
+        "IPV6",
+        alt((
+            map(
+                // [ *5( h16 ":" ) h16 ] "::" h16
+                tuple((
+                    opt(alt((
+                        map(
+                            pair(many_m_n(0, 5, pair(ip6_num, tag(":"))), ip6_num),
+                            |(a, b)| {
+                                format!(
+                                    "{}{b}",
+                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                                )
+                            },
+                        ),
+                        ip6_num,
+                    ))),
+                    tag("::"),
+                    ip6_num,
+                )),
+                |(a, b, c)| format!("{}{b}{c}", a.unwrap_or_default()),
+            ),
+            map(
+                // [ *6( h16 ":" ) h16 ] "::"
+                tuple((
+                    opt(alt((
+                        map(
+                            pair(many_m_n(0, 6, pair(ip6_num, tag(":"))), ip6_num),
+                            |(a, b)| {
+                                format!(
+                                    "{}{b}",
+                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                                )
+                            },
+                        ),
+                        ip6_num,
+                    ))),
+                    tag("::"),
+                )),
+                |(a, b)| format!("{}{b}", a.unwrap_or_default()),
+            ),
+            map(
+                // [ *4( h16 ":" ) h16 ] "::" ls32
+                tuple((
+                    opt(alt((
+                        map(
+                            pair(many_m_n(0, 4, pair(ip6_num, tag(":"))), ip6_num),
+                            |(a, b)| {
+                                format!(
+                                    "{}{b}",
+                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                                )
+                            },
+                        ),
+                        ip6_num,
+                    ))),
+                    tag("::"),
+                    ls32,
+                )),
+                |(a, b, c)| format!("{}{b}{c}", a.unwrap_or_default()),
+            ),
+            map(
+                // [ *3( h16 ":" ) h16 ] "::" h16 ":" ls32
+                tuple((
+                    opt(alt((
+                        map(
+                            pair(many_m_n(0, 3, pair(ip6_num, tag(":"))), ip6_num),
+                            |(a, b)| {
+                                format!(
+                                    "{}{b}",
+                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                                )
+                            },
+                        ),
+                        ip6_num,
+                    ))),
+                    tag("::"),
+                    ip6_num,
+                    tag(":"),
+                    ls32,
+                )),
+                |(a, b, c, d, e)| format!("{}{b}{c}{d}{e}", a.unwrap_or_default()),
+            ),
+            map(
+                // [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+                tuple((
+                    opt(alt((
+                        map(
+                            pair(many_m_n(0, 2, pair(ip6_num, tag(":"))), ip6_num),
+                            |(a, b)| {
+                                format!(
+                                    "{}{b}",
+                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                                )
+                            },
+                        ),
+                        ip6_num,
+                    ))),
+                    tag("::"),
+                    count(pair(ip6_num, tag(":")), 2),
+                    ls32,
+                )),
+                |(a, b, c, d)| {
+                    format!(
+                        "{}{b}{}{d}",
+                        a.unwrap_or_default(),
+                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                    )
+                },
+            ),
+            map(
+                // [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+                tuple((
+                    opt(pair(opt(pair(ip6_num, tag(":"))), ip6_num)),
+                    tag("::"),
+                    count(pair(ip6_num, tag(":")), 3),
+                    ls32,
+                )),
+                |(a, b, c, d)| {
+                    format!(
+                        "{}{b}{}{d}",
+                        if let Some((a, b)) = a {
+                            format!(
+                                "{}{b}",
+                                a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                            )
+                        } else {
+                            String::default()
+                        },
+                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                    )
+                },
+            ),
+            map(
+                // [ h16 ] "::" 4( h16 ":" ) ls32
+                tuple((
+                    opt(ip6_num),
+                    tag("::"),
+                    count(pair(ip6_num, tag(":")), 4),
+                    ls32,
+                )),
+                |(a, b, c, d)| {
+                    format!(
+                        "{}{b}{}{d}",
+                        a.unwrap_or_default(),
+                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                    )
+                },
+            ),
+            map(
+                // "::" 5( h16 ":" ) ls32
+                tuple((tag("::"), count(pair(ip6_num, tag(":")), 5), ls32)),
+                |(a, b, c)| {
+                    format!(
+                        "{a}{}{c}",
+                        b.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                    )
+                },
+            ),
+            map(
+                // 6( h16 ":" ) ls32
+                pair(count(pair(ip6_num, tag(":")), 6), ls32),
+                |(a, b)| {
+                    format!(
+                        "{}{b}",
+                        a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
+                    )
+                },
+            ),
+        )),
+    )(i)
+}
+
+///
+/// Parse an IP in accordance to the ABNF form described in
+/// [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
+///
 fn ip<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, IpAddr, E> {
@@ -302,7 +470,7 @@ fn ip<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
         "IP",
         map(
             tuple((alt((ipv4, ipv6)), peek(alt((space1, eol, eof))))),
-            |(ip, _)| ip,
+            |(ip, _)| IpAddr::from_str(&ip).unwrap(),
         ),
     )(i)
 }

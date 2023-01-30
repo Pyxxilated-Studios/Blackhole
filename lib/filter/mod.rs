@@ -1,6 +1,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::Path,
     sync::LazyLock,
     time::SystemTime,
@@ -137,11 +138,19 @@ impl Filter {
                     response.status(),
                     response.into_string()?
                 )));
+            };
+
+            let response = BufReader::new(response.into_reader());
+            let mut writer = BufWriter::new(
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(list.to_string())?,
+            );
+
+            for line in response.lines() {
+                writeln!(&mut writer, "{}", line.unwrap())?;
             }
-
-            let contents = response.into_string()?;
-
-            std::fs::write(list.to_string(), contents)?;
         }
 
         let mut filter = FILTER.write().await;
@@ -156,7 +165,7 @@ impl Filter {
     /// # Errors
     /// If it fails to open the list
     ///
-    #[instrument(err)]
+    #[instrument]
     pub async fn import() -> Result<(), Error> {
         let rules = {
             let filter = FILTER.read().await;
