@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv6Addr};
 
 use dns::DNSError;
 use tokio::task::JoinHandle;
-use tracing::error;
+use tracing::{error, instrument};
 
 pub mod api;
 pub mod cache;
@@ -23,6 +23,7 @@ pub mod schedule;
 pub mod server;
 pub mod statistics;
 
+#[instrument]
 pub async fn spawn() -> Result<JoinHandle<()>, DNSError> {
     let port = config::Config::get(|config| config.port).await;
 
