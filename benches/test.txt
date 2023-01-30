@@ -75,6 +75,7 @@ ff02::3 ip6-allhosts
 # --------------------------------------------
 # E N E R G I Z E D  B E G I N S
 # --------------------------------------------
+0.0.0.0 *mail.com
 0.0.0.0 000f378090e2706f51b54df7358b7608.safeframe.googlesyndication.com
 0.0.0.0 0031b080.api.splkmobile.com
 0.0.0.0 006a039c957c142bb.com

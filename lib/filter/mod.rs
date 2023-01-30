@@ -8,6 +8,7 @@ use std::{
 };
 
 use bstr::ByteSlice;
+use regex::Regex;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -21,6 +22,8 @@ use self::rules::{Rule, Rules};
 pub mod rules;
 
 static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
+static REPLACEMENT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("\\\\*").expect("Failed to parse regex"));
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Clone, Eq, Serialize, Deserialize)]
@@ -214,9 +217,22 @@ impl Filter {
             .split(|&c| c == b'.')
             .rev()
             .try_fold(&self.rules, |current_node, entry| {
-                match current_node.children.get(entry.as_bstr()) {
-                    Some(entry) => Ok(entry),
-                    None => Err(current_node),
+                if let Some(entry) = current_node.children.get(entry.as_bstr()) {
+                    Ok(entry)
+                } else {
+                    match current_node.children.iter().find(|(key, _)| {
+                        if !key.contains(&b'*') {
+                            return false;
+                        }
+
+                        let key = String::from_utf8_lossy(key.as_slice());
+                        let re = REPLACEMENT.replace_all(&key, ".*");
+                        let matcher = Regex::new(&re).expect("Failed to parse rule regex");
+                        matcher.is_match(&String::from_utf8_lossy(entry))
+                    }) {
+                        Some((_, entry)) => Ok(entry),
+                        None => Err(current_node),
+                    }
                 }
             })
             .map_or_else(|err| &err.rule, |rule| &rule.rule)
@@ -255,7 +271,7 @@ mod tests {
         assert!(entries.is_ok());
 
         let entries = entries.unwrap();
-        assert_eq!(filter.rules.insert(entries), 81560);
+        assert_eq!(filter.rules.insert(entries), 81561);
     }
 
     #[test]
@@ -298,5 +314,48 @@ mod tests {
 
         let rule = rule.unwrap();
         assert_eq!(rule.ty, Kind::Deny);
+    }
+
+    #[test]
+    fn regex_matching() {
+        let mut filter = Filter::default();
+
+        let packet = Packet {
+            header: Header {
+                id: 0,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: ResultCode::NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 0,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("gmail.com".into()),
+                qtype: QueryType::A,
+                class: 1u16,
+            }],
+            answers: vec![],
+            authorities: vec![],
+            resources: vec![],
+        };
+
+        let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
+        filter.rules.insert(entries);
+
+        let rule = filter.filter(&packet);
+        assert!(rule.is_some());
+
+        let rule = rule.unwrap();
+        assert_eq!(rule.ty, Kind::Deny);
+        assert_eq!(rule.domain, "*mail.com");
     }
 }
