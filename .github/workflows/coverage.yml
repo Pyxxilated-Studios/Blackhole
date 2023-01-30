@@ -28,6 +28,8 @@ jobs:
       - name: Install Rust
         run: rustup default nightly
 
+      - uses: rui314/setup-mold@v1
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 

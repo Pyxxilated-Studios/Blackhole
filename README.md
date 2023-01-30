@@ -1,10 +1,8 @@
 # Blackhole
 
-[![Tests](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml/badge.svg)](https://github.com/Pyxxil/Blackhole/actions/workflows/test-pr.yml)
+[![Tests](https://github.com/Pyxxil/Blackhole/actions/workflows/server.yml/badge.svg)](https://github.com/Pyxxil/Blackhole/actions/workflows/server.yml)
 ![Release](https://img.shields.io/github/v/release/pyxxil/blackhole?sort=semver)
 ![License](https://img.shields.io/github/license/pyxxil/blackhole)
-![Docker](https://ghcr-badge.deta.dev/pyxxil/blackhole/latest_tag?label=latest)
-![Docker](https://ghcr-badge.deta.dev/pyxxil/blackhole/size)
 [![codecov](https://codecov.io/gh/Pyxxil/Blackhole/branch/main/graph/badge.svg?token=98FLSLAD6M)](https://codecov.io/gh/Pyxxil/Blackhole)
 
 - [Blackhole](#blackhole)

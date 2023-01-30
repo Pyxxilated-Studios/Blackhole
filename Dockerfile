@@ -1,4 +1,4 @@
-FROM node:19.2-buster-slim as client
+FROM node:19.5.0-buster-slim as client
 
 WORKDIR /client
 
@@ -9,13 +9,15 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1.65-alpine as server
+FROM rust:1.67-alpine as server
 
-RUN apk add musl-dev pkgconfig git
+RUN apk add musl-dev pkgconfig git clang mold
 RUN rustup set profile minimal
 RUN rustup default nightly
 
+ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_UNSTABLE_SPARSE_REGISTRY=true
 
 RUN USER=root cargo new --bin blackhole
 WORKDIR /blackhole
@@ -37,7 +39,7 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM denoland/deno:debian-1.28.3
+FROM denoland/deno:debian-1.30.0
 
 RUN apt update && apt install -y dnsutils ca-certificates
 
