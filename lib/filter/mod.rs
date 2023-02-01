@@ -1,7 +1,8 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     sync::LazyLock,
     time::SystemTime,
@@ -15,9 +16,17 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{config::Config, dns, schedule::Sched};
+use crate::{
+    config::Config,
+    dns::{
+        packet::Packet, qualified_name::QualifiedName, question::Question, QueryType, Record,
+        ResultCode, Ttl, RR,
+    },
+    schedule::Sched,
+    server::handler::Handler,
+};
 
-use self::rules::{Rule, Rules};
+use self::rules::{Kind, Rule, Rules};
 
 pub mod rules;
 
@@ -143,16 +152,24 @@ impl Filter {
                 )));
             };
 
-            let response = BufReader::new(response.into_reader());
-            let mut writer = BufWriter::new(
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .open(list.to_string())?,
-            );
+            let mut len = response
+                .header("Content-Length")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap();
 
-            for line in response.lines() {
-                writeln!(&mut writer, "{}", line.unwrap())?;
+            let mut response = response.into_reader();
+            let mut writer = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(list.to_string())?;
+
+            while len > 0 {
+                let mut bytes = [0; 8192];
+                let length = response.read(&mut bytes).unwrap_or_default();
+
+                writer.write_all(&bytes[..length]).unwrap();
+
+                len -= length;
             }
         }
 
@@ -210,7 +227,7 @@ impl Filter {
     }
 
     #[inline]
-    pub fn filter(&self, packet: &dns::packet::Packet) -> Option<Rule> {
+    pub fn filter(&self, packet: &Packet) -> Option<Rule> {
         packet.questions[0]
             .name
             .name()
@@ -239,11 +256,77 @@ impl Filter {
             .clone()
     }
 
-    pub fn check(packet: &dns::packet::Packet) -> Option<Rule> {
+    pub fn check(packet: &Packet) -> Option<Rule> {
         FILTER
             .try_read()
             .map(|filter| filter.filter(packet))
             .unwrap_or_default()
+    }
+
+    pub(crate) fn apply<Buff>(handler: &mut Handler<Buff>, packet: &mut Packet) {
+        match Filter::check(packet) {
+            Some(rule) if rule.ty == Kind::Deny => {
+                let action = rule.action.clone();
+                handler.rule = Some(rule);
+                let mut packet = packet;
+                packet.header.recursion_available = true;
+                packet.header.response = true;
+                packet.header.rescode = ResultCode::NOERROR;
+                packet.header.truncated_message = false;
+                match packet.questions.first() {
+                    Some(Question {
+                        qtype: QueryType::A,
+                        ..
+                    }) => {
+                        packet.header.answers = 1;
+                        packet.answers = vec![Record::A {
+                            record: RR {
+                                domain: QualifiedName(packet.questions[0].name.name().clone()),
+                                ttl: Ttl(600),
+                                query_type: QueryType::A,
+                                class: 1,
+                                data_length: 0,
+                            },
+                            addr: match action
+                                .and_then(|action| action.rewrite)
+                                .unwrap_or_default()
+                                .v4
+                            {
+                                IpAddr::V4(addr) => addr,
+                                IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
+                            },
+                        }];
+                    }
+                    Some(Question {
+                        qtype: QueryType::AAAA,
+                        ..
+                    }) => {
+                        packet.header.answers = 1;
+                        packet.answers = vec![Record::AAAA {
+                            record: RR {
+                                domain: QualifiedName(packet.questions[0].name.name().clone()),
+                                ttl: Ttl(600),
+                                query_type: QueryType::AAAA,
+                                class: 1,
+                                data_length: 0,
+                            },
+                            addr: match action
+                                .and_then(|action| action.rewrite)
+                                .unwrap_or_default()
+                                .v6
+                            {
+                                IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
+                                IpAddr::V6(addr) => addr,
+                            },
+                        }];
+                    }
+                    _ => {}
+                }
+                packet.authorities = Vec::default();
+                packet.resources = Vec::default();
+            }
+            _ => {}
+        }
     }
 }
 

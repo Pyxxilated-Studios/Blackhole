@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     marker::PhantomData,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -21,15 +21,11 @@ use crate::{
     config::Config,
     dns::{
         packet::Packet,
-        qualified_name::QualifiedName,
         question::Question,
         traits::{FromBuffer, IO},
-        DNSError, QueryType, Record, Result, ResultCode, Ttl, RR,
+        DNSError, Record, Result, ResultCode,
     },
-    filter::{
-        rules::{Kind, Rewrite, Rule},
-        Filter,
-    },
+    filter::{rules::Rule, Filter},
     server::Upstream,
     statistics::Request,
 };
@@ -96,23 +92,23 @@ impl<S: Stream> Client<S> {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub(crate) struct Handler<Buff> {
     client: String,
-    question: Question,
-    answers: Vec<Record>,
-    rule: Option<Rule>,
-    status: ResultCode,
+    pub(crate) question: Question,
+    pub(crate) answers: Vec<Record>,
+    pub(crate) rule: Option<Rule>,
+    pub(crate) status: ResultCode,
     elapsed: usize,
     timestamp: DateTime<Utc>,
-    cached: bool,
+    pub(crate) cached: bool,
     #[serde(skip)]
     phantom: PhantomData<Buff>,
 }
 
 impl<Buff> Handler<Buff>
 where
-    Buff: IO + TryFrom<Packet> + Default,
+    Buff: IO + TryFrom<Packet> + Default + Clone,
     DNSError: From<<Buff as TryFrom<Packet>>::Error>,
     <Buff as TryFrom<Packet>>::Error: Debug,
 {
@@ -210,84 +206,6 @@ where
         Packet::from_buffer(&mut res_buffer)
     }
 
-    async fn filter(&mut self, packet: Packet) -> Result<Packet> {
-        match Filter::check(&packet) {
-            Some(rule) if rule.ty == Kind::Allow => {
-                self.rule = Some(rule);
-                self.forward(packet).await
-            }
-            Some(rule) if rule.ty == Kind::Deny => {
-                let action = rule.action.clone();
-                self.rule = Some(rule);
-                let mut packet = packet;
-                packet.header.recursion_available = true;
-                packet.header.response = true;
-                packet.header.rescode = ResultCode::NOERROR;
-                packet.header.truncated_message = false;
-                match packet.questions.first() {
-                    Some(Question {
-                        qtype: QueryType::A,
-                        ..
-                    }) => {
-                        packet.header.answers = 1;
-                        packet.answers = vec![Record::A {
-                            record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name().clone()),
-                                ttl: Ttl(600),
-                                query_type: QueryType::A,
-                                class: 1,
-                                data_length: 0,
-                            },
-                            addr: match action
-                                .and_then(|action| action.rewrite)
-                                .unwrap_or(Rewrite {
-                                    v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                                    v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                                })
-                                .v4
-                            {
-                                IpAddr::V4(addr) => addr,
-                                IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
-                            },
-                        }];
-                    }
-                    Some(Question {
-                        qtype: QueryType::AAAA,
-                        ..
-                    }) => {
-                        packet.header.answers = 1;
-                        packet.answers = vec![Record::AAAA {
-                            record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name().clone()),
-                                ttl: Ttl(600),
-                                query_type: QueryType::AAAA,
-                                class: 1,
-                                data_length: 0,
-                            },
-                            addr: match action
-                                .and_then(|action| action.rewrite)
-                                .unwrap_or(Rewrite {
-                                    v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                                    v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                                })
-                                .v6
-                            {
-                                IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
-                                IpAddr::V6(addr) => addr,
-                            },
-                        }];
-                    }
-                    _ => {}
-                }
-                packet.authorities = Vec::default();
-                packet.resources = Vec::default();
-
-                Ok(packet)
-            }
-            _ => self.forward(packet).await,
-        }
-    }
-
     #[instrument(skip(client, packet))]
     pub(crate) async fn serve<S: Stream>(mut client: Client<S>, packet: Packet) {
         let mut handler = Handler::<Buff> {
@@ -301,37 +219,51 @@ where
 
         let start = Instant::now();
 
-        let response = if let Some(mut cached) = Cache::get(&packet).await {
-            cached.header.id = id;
+        let response_packet = if let Some(cached) = Cache::get(&packet).await {
             handler.cached = true;
-            handler.rule = Filter::check(&packet);
-
-            Ok(cached)
+            Some(cached)
         } else {
-            match handler.filter(packet).await {
-                Ok(packet) => {
-                    Cache::insert(&packet).await;
-                    Ok(packet)
-                }
-                Err(err) => Err(err),
-            }
+            Some(packet)
         };
 
-        match response {
-            Ok(response_packet) => {
-                let id = response_packet.header.id;
+        if let Some(mut response_packet) = response_packet {
+            Filter::apply(&mut handler, &mut response_packet);
 
-                if let Err(err) = handler.respond(&mut client, response_packet).await {
-                    error!("{err:?}");
-                    handler.respond_error(&mut client, id).await;
+            let forwarded = if !handler.cached
+                && (handler.rule.is_none()
+                    || handler
+                        .rule
+                        .as_ref()
+                        .unwrap()
+                        .action
+                        .as_ref()
+                        .map_or_else(|| false, |action| action.rewrite.is_some()))
+            {
+                handler.forward(response_packet).await
+            } else {
+                Ok(response_packet)
+            };
+
+            match forwarded {
+                Ok(mut response_packet) => {
+                    response_packet.header.id = id;
+
+                    if !handler.cached && response_packet.header.rescode != ResultCode::SERVFAIL {
+                        Cache::insert(&response_packet).await;
+                    }
+
+                    if let Err(err) = handler.respond(&mut client, response_packet).await {
+                        error!("{err:?}");
+                        handler.respond_error(&mut client, id).await;
+                    }
                 }
+                Err(err) => match err {
+                    DNSError::Timeout(_) => {}
+                    err => {
+                        error!("{err}");
+                    }
+                },
             }
-            Err(err) => match err {
-                DNSError::Timeout(_) => {}
-                _ => {
-                    error!("{err:?}");
-                }
-            },
         }
 
         handler.elapsed = start.elapsed().as_nanos() as usize;

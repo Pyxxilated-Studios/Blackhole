@@ -18,6 +18,7 @@ RUN rustup default nightly
 ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_UNSTABLE_SPARSE_REGISTRY=true
+ENV CARGO_INCREMENTAL=0
 
 RUN USER=root cargo new --bin blackhole
 WORKDIR /blackhole

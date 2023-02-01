@@ -8,6 +8,7 @@ use clap::Parser;
 use futures::StreamExt;
 use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
 use signal_hook_tokio::Signals;
+use tokio::sync::watch::channel;
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
@@ -62,7 +63,9 @@ async fn main() {
     .unwrap_or_default();
     blackhole::config::Config::load(&cli).await.unwrap();
 
-    let blackhole_handle = match blackhole::spawn().await {
+    let (shutdown, shutdown_signal) = channel(false);
+
+    let blackhole_handle = match blackhole::spawn(shutdown_signal).await {
         Ok(handle) => handle,
         Err(err) => {
             error!("{err}");
@@ -76,7 +79,6 @@ async fn main() {
         while let Some(signal) = signals.next().await {
             match signal {
                 SIGTERM | SIGINT | SIGQUIT => {
-                    info!("Shutting down");
                     return;
                 }
                 _ => unreachable!(),
@@ -86,6 +88,10 @@ async fn main() {
 
     tokio::select! {
         _ = blackhole_handle => {}
-        _ = signals_handle => {}
+        _ = signals_handle => {
+            info!("Shutting down");
+            shutdown.send(true).expect("There was an issue shutting down");
+            shutdown.closed().await;
+        }
     }
 }
