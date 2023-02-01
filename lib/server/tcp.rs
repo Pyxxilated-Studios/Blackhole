@@ -6,7 +6,7 @@ use std::{
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
-    sync::RwLock,
+    sync::{watch::Receiver, RwLock},
 };
 use tracing::{info, instrument, trace};
 
@@ -67,25 +67,36 @@ impl Server {
         }
     }
 
-    #[instrument(skip(self),
+    #[instrument(skip(self, shutdown_signal),
         fields(
             addr = %self.address
         )
     )]
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&self, mut shutdown_signal: Receiver<bool>) -> Result<()> {
         info!("listening on {}", self.listener.read().await.local_addr()?);
 
-        while let Ok((stream, packet, address)) = self.receive().await {
-            tokio::spawn(async move {
-                Handler::<ResizableBuffer>::serve(
-                    Client {
-                        client: stream,
-                        address,
-                    },
-                    packet,
-                )
-                .await;
-            });
+        loop {
+            tokio::select! {
+                _ = shutdown_signal.changed() => {
+                    break;
+                }
+
+
+                request = self.receive() => {
+                    let Ok((stream, packet, address)) = request else { break; };
+
+                    tokio::spawn(async move {
+                        Handler::<ResizableBuffer>::serve(
+                            Client {
+                                client: stream,
+                                address,
+                            },
+                            packet,
+                        )
+                        .await;
+                    });
+                }
+            }
         }
 
         Ok(())

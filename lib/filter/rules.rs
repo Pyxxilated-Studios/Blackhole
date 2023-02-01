@@ -29,6 +29,15 @@ pub struct Rewrite {
     pub v6: IpAddr,
 }
 
+impl Default for Rewrite {
+    fn default() -> Self {
+        Rewrite {
+            v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+        }
+    }
+}
+
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub(crate) struct Action {

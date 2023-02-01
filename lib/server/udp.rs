@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use tokio::{net::UdpSocket, sync::RwLock};
+use tokio::{
+    net::UdpSocket,
+    sync::{watch::Receiver, RwLock},
+};
 use tracing::{info, instrument, trace};
 
 use crate::{
@@ -63,38 +66,47 @@ impl Server {
         }
     }
 
-    #[instrument(skip(self),
+    #[instrument(skip(self, shutdown_signal),
         fields(
             addr = %self.address
         )
     )]
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&self, mut shutdown_signal: Receiver<bool>) -> Result<()> {
         info!("listening on {}", self.socket.read().await.local_addr()?);
 
-        while let Ok((packet, address)) = self.receive().await {
-            let socket = self.socket.clone();
-
-            tokio::spawn(async move {
-                if let Some(Record::OPT { .. }) = packet.resources.first() {
-                    Handler::<ResizableBuffer>::serve(
-                        Client {
-                            client: socket,
-                            address,
-                        },
-                        packet,
-                    )
-                    .await;
-                } else {
-                    Handler::<Buffer>::serve(
-                        Client {
-                            client: socket,
-                            address,
-                        },
-                        packet,
-                    )
-                    .await;
+        loop {
+            tokio::select! {
+                _ = shutdown_signal.changed() => {
+                    break;
                 }
-            });
+
+                request = self.receive() => {
+                    let Ok((packet, address)) = request else { break; };
+                    let socket = self.socket.clone();
+
+                    tokio::spawn(async move {
+                        if let Some(Record::OPT { .. }) = packet.resources.first() {
+                            Handler::<ResizableBuffer>::serve(
+                                Client {
+                                    client: socket,
+                                    address,
+                                },
+                                packet,
+                            )
+                            .await;
+                        } else {
+                            Handler::<Buffer>::serve(
+                                Client {
+                                    client: socket,
+                                    address,
+                                },
+                                packet,
+                            )
+                            .await;
+                        }
+                    });
+                }
+            }
         }
 
         Ok(())

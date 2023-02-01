@@ -11,8 +11,9 @@
 use std::net::{IpAddr, Ipv6Addr};
 
 use dns::DNSError;
-use tokio::task::JoinHandle;
-use tracing::{error, instrument};
+use tokio::{sync::watch::Receiver, task::JoinHandle};
+
+use crate::config::Config;
 
 pub mod api;
 pub mod cache;
@@ -23,49 +24,61 @@ pub mod schedule;
 pub mod server;
 pub mod statistics;
 
-#[instrument]
-pub async fn spawn() -> Result<JoinHandle<()>, DNSError> {
+///
+/// Spawn all servers, the API, and initialise the scheduler
+///
+/// # Errors
+/// If there are issues during startup
+///
+pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, DNSError> {
     let port = config::Config::get(|config| config.port).await;
 
-    let udp_server = match server::udp::Server::builder()
+    match server::udp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
         .on(port)
         .build()
         .await
     {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
+        Ok(server) => tokio::spawn({
+            let shutdown_signal = shutdown_signal.clone();
+            async move { server.run(shutdown_signal).await }
+        }),
         Err(err) => {
-            error!("{err}");
             return Err(err);
         }
     };
 
-    let tcp_server = match server::tcp::Server::builder()
+    match server::tcp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
         .on(port)
         .build()
         .await
     {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
+        Ok(server) => tokio::spawn({
+            let shutdown_signal = shutdown_signal.clone();
+            async move { server.run(shutdown_signal.clone()).await }
+        }),
         Err(err) => {
-            error!("{err}");
             return Err(err);
         }
     };
 
-    let scheduler_handle = tokio::spawn(async move {
-        schedule::Scheduler::init(config::Config::get(|config| config.schedules.clone()).await)
+    tokio::spawn({
+        let shutdown_signal = shutdown_signal.clone();
+        async move {
+            schedule::Scheduler::init(
+                shutdown_signal,
+                config::Config::get(|config| config.schedules.clone()).await,
+            )
             .await;
+        }
     });
 
-    let api_server = tokio::spawn(async move { api::Server.run().await });
+    tokio::spawn(async move { api::Server.run().await });
 
     Ok(tokio::spawn(async move {
-        tokio::select! {
-            _ = udp_server => {}
-            _ = tcp_server => {}
-            _ = scheduler_handle => {}
-            _ = api_server => {}
-        }
+        shutdown_signal.changed().await.expect("Failed to shutdown");
+        Config::save().await.expect("Failed to save config");
+        drop(shutdown_signal);
     }))
 }
