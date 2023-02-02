@@ -226,7 +226,6 @@ impl Filter {
         }
     }
 
-    #[inline]
     pub fn filter(&self, packet: &Packet) -> Option<Rule> {
         packet.questions[0]
             .name
@@ -236,20 +235,19 @@ impl Filter {
             .try_fold(&self.rules, |current_node, entry| {
                 if let Some(entry) = current_node.children.get(entry.as_bstr()) {
                     Ok(entry)
-                } else {
-                    match current_node.children.iter().find(|(key, _)| {
-                        if !key.contains(&b'*') {
-                            return false;
-                        }
-
-                        let key = String::from_utf8_lossy(key.as_slice());
-                        let re = REPLACEMENT.replace_all(&key, ".*");
-                        let matcher = Regex::new(&re).expect("Failed to parse rule regex");
-                        matcher.is_match(&String::from_utf8_lossy(entry))
-                    }) {
-                        Some((_, entry)) => Ok(entry),
-                        None => Err(current_node),
+                } else if let Some((_, entry)) = current_node.children.iter().find(|(key, _)| {
+                    if !key.contains(&b'*') {
+                        return false;
                     }
+
+                    let key = String::from_utf8_lossy(key.as_bytes());
+                    let re = REPLACEMENT.replace_all(&key, ".*");
+                    let matcher = Regex::new(&re).expect("Failed to parse rule regex");
+                    matcher.is_match(&String::from_utf8_lossy(entry))
+                }) {
+                    Ok(entry)
+                } else {
+                    Err(current_node)
                 }
             })
             .map_or_else(|err| &err.rule, |rule| &rule.rule)
