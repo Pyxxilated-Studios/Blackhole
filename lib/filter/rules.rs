@@ -117,7 +117,7 @@ impl Rules {
             .filter_map(Result::ok)
             .par_bridge()
             .try_fold(
-                || Vec::with_capacity(1024),
+                || Vec::with_capacity(1024 * 8),
                 |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
                     Err(err) => Err(Error::FilterError(format!("Invalid filter list: {err}"))),
                     Ok((_, ents)) => {
@@ -127,7 +127,7 @@ impl Rules {
                 },
             )
             .try_reduce(
-                || Vec::with_capacity(1024),
+                || Vec::with_capacity(1024 * 64),
                 |mut entries, entry| {
                     entries.extend(entry);
                     Ok(entries)

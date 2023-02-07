@@ -3,10 +3,7 @@ use std::{sync::LazyLock, time::Duration};
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    sync::{watch::Receiver, RwLock},
-    time::sleep,
-};
+use tokio::{sync::RwLock, time::sleep};
 use tracing::{instrument, trace};
 
 use crate::{
@@ -76,8 +73,8 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    #[instrument(skip(shutdown_signal))]
-    async fn run(mut shutdown_signal: Receiver<bool>) {
+    #[instrument()]
+    async fn run() {
         loop {
             let mut soonest = Utc::now();
 
@@ -103,12 +100,12 @@ impl Scheduler {
                 }
             }
 
-            tokio::select! {
-                _ =  sleep((soonest.time() - Utc::now().time()).to_std().unwrap_or_default()) => {}
-                _ = shutdown_signal.changed() => {
-                    break;
-                }
-            }
+            sleep(
+                (soonest.time() - Utc::now().time())
+                    .to_std()
+                    .unwrap_or_default(),
+            )
+            .await;
         }
     }
 
@@ -134,13 +131,13 @@ impl Scheduler {
             .0
     }
 
-    #[instrument(skip(shutdown_signal))]
-    pub async fn init(shutdown_signal: Receiver<bool>, schedules: Vec<Schedule>) {
+    #[instrument()]
+    pub async fn init(schedules: Vec<Schedule>) {
         for schedule in schedules {
             schedule.name.init().await;
             Self::schedule(schedule).await;
         }
 
-        Self::run(shutdown_signal).await;
+        Self::run().await;
     }
 }

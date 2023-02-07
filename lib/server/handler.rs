@@ -45,6 +45,7 @@ pub(crate) trait Stream {
 impl Stream for TcpStream {
     type Res = ();
 
+    #[inline]
     async fn write<Buffer>(
         &mut self,
         buffer: &mut Buffer,
@@ -54,7 +55,7 @@ impl Stream for TcpStream {
         Buffer: IO + TryFrom<Packet> + Default,
     {
         self.writable().await?;
-        buffer.insert(0, buffer.pos() as u16)?;
+        buffer.insert(0, u16::try_from(buffer.pos()).expect("Invalid u16"))?;
         self.write_all(buffer.get_range(0, buffer.pos() + 2)?)
             .await?;
 
@@ -65,6 +66,7 @@ impl Stream for TcpStream {
 impl Stream for Arc<RwLock<UdpSocket>> {
     type Res = usize;
 
+    #[inline]
     async fn write<Buffer>(&mut self, buffer: &mut Buffer, address: SocketAddr) -> Result<Self::Res>
     where
         Buffer: IO + TryFrom<Packet> + Default,
@@ -83,7 +85,8 @@ pub(crate) struct Client<S: Stream> {
 }
 
 impl<S: Stream> Client<S> {
-    async fn write<Buffer>(&mut self, buffer: &mut Buffer) -> Result<S::Res>
+    #[inline]
+    async fn send<Buffer>(&mut self, buffer: &mut Buffer) -> Result<S::Res>
     where
         Buffer: IO + TryFrom<Packet> + Default,
     {
@@ -135,9 +138,7 @@ where
             Buff::try_from(packet)
         })?;
 
-        client.write(&mut buffer).await?;
-
-        Ok(())
+        client.send(&mut buffer).await.map(|_| ())
     }
 
     #[instrument(skip(self, client))]
@@ -145,14 +146,11 @@ where
         let mut packet = Packet::default();
         packet.header.id = id;
         packet.header.rescode = ResultCode::SERVFAIL;
-        self.answers = Vec::default();
         packet.header.response = true;
         packet.header.answers = 0;
         packet.header.truncated_message = false;
-        packet.answers = Vec::default();
+        self.answers = Vec::default();
         self.status = ResultCode::SERVFAIL;
-        packet.authorities = Vec::default();
-        packet.resources = Vec::default();
 
         let mut buffer = match Buff::try_from(packet) {
             Ok(buffer) => buffer,
@@ -162,7 +160,7 @@ where
             }
         };
 
-        if let Err(err) = client.write(&mut buffer).await {
+        if let Err(err) = client.send(&mut buffer).await {
             error!("{err:?}");
         }
     }
@@ -186,7 +184,7 @@ where
 
         let forwarder = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
 
-        let buffer = Buff::try_from(packet)?;
+        let mut buffer = Buff::try_from(packet)?;
 
         forwarder.set_tos(0xFE)?;
 
@@ -196,14 +194,26 @@ where
         )
         .await??;
 
-        let mut res_buffer = Buff::default();
+        buffer = Buff::default();
         tokio::time::timeout(
             Duration::from_secs(5),
-            forwarder.recv_from(res_buffer.buffer_mut()),
+            forwarder.recv_from(buffer.buffer_mut()),
         )
         .await??;
 
-        Packet::from_buffer(&mut res_buffer)
+        Packet::from_buffer(&mut buffer)
+    }
+
+    fn should_forward(&self) -> bool {
+        !self.cached
+            && (self.rule.as_ref().map_or_else(
+                || false,
+                |rule| {
+                    rule.action
+                        .as_ref()
+                        .map_or_else(|| false, |action| action.rewrite.is_some())
+                },
+            ))
     }
 
     #[instrument(skip(client, packet))]
@@ -219,51 +229,41 @@ where
 
         let start = Instant::now();
 
-        let response_packet = if let Some(cached) = Cache::get(&packet).await {
-            handler.cached = true;
-            Some(cached)
+        let mut response_packet = Cache::get(&packet).await.map_or_else(
+            || packet,
+            |cached| {
+                handler.cached = true;
+                cached
+            },
+        );
+
+        Filter::apply(&mut handler, &mut response_packet);
+
+        let response_packet = if handler.should_forward() {
+            handler.forward(response_packet).await
         } else {
-            Some(packet)
+            Ok(response_packet)
         };
 
-        if let Some(mut response_packet) = response_packet {
-            Filter::apply(&mut handler, &mut response_packet);
+        match response_packet {
+            Ok(mut response_packet) => {
+                response_packet.header.id = id;
 
-            let forwarded = if !handler.cached
-                && (handler.rule.is_none()
-                    || handler
-                        .rule
-                        .as_ref()
-                        .unwrap()
-                        .action
-                        .as_ref()
-                        .map_or_else(|| false, |action| action.rewrite.is_some()))
-            {
-                handler.forward(response_packet).await
-            } else {
-                Ok(response_packet)
-            };
-
-            match forwarded {
-                Ok(mut response_packet) => {
-                    response_packet.header.id = id;
-
-                    if !handler.cached && response_packet.header.rescode != ResultCode::SERVFAIL {
-                        Cache::insert(&response_packet).await;
-                    }
-
-                    if let Err(err) = handler.respond(&mut client, response_packet).await {
-                        error!("{err:?}");
-                        handler.respond_error(&mut client, id).await;
-                    }
+                if !handler.cached && response_packet.header.rescode != ResultCode::SERVFAIL {
+                    Cache::insert(&response_packet).await;
                 }
-                Err(err) => match err {
-                    DNSError::Timeout(_) => {}
-                    err => {
-                        error!("{err}");
-                    }
-                },
+
+                if let Err(err) = handler.respond(&mut client, response_packet).await {
+                    error!("{err:?}");
+                    handler.respond_error(&mut client, id).await;
+                }
             }
+            Err(err) => match err {
+                DNSError::Timeout(_) => {}
+                err => {
+                    error!("{err}");
+                }
+            },
         }
 
         handler.elapsed = start.elapsed().as_nanos() as usize;
