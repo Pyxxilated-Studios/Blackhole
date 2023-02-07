@@ -1,7 +1,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    io::{Read, Write},
+    io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     sync::LazyLock,
@@ -13,7 +13,7 @@ use regex::Regex;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -158,16 +158,23 @@ impl Filter {
                 .unwrap();
 
             let mut response = response.into_reader();
-            let mut writer = std::fs::OpenOptions::new()
+            let mut writer = OpenOptions::new()
                 .create(true)
                 .write(true)
-                .open(list.to_string())?;
+                .open(list.to_string())
+                .await?;
 
             while len > 0 {
                 let mut bytes = [0; 8192];
                 let length = response.read(&mut bytes).unwrap_or_default();
 
-                writer.write_all(&bytes[..length]).unwrap();
+                match writer.write_all(&bytes[..length]).await {
+                    Err(err) if err.kind() != tokio::io::ErrorKind::Other => error!("{err}"),
+                    Err(_) => {
+                        break;
+                    }
+                    _ => {}
+                }
 
                 len -= length;
             }
@@ -264,9 +271,6 @@ impl Filter {
     pub(crate) fn apply<Buff>(handler: &mut Handler<Buff>, packet: &mut Packet) {
         match Filter::check(packet) {
             Some(rule) if rule.ty == Kind::Deny => {
-                let action = rule.action.clone();
-                handler.rule = Some(rule);
-                let mut packet = packet;
                 packet.header.recursion_available = true;
                 packet.header.response = true;
                 packet.header.rescode = ResultCode::NOERROR;
@@ -285,8 +289,10 @@ impl Filter {
                                 class: 1,
                                 data_length: 0,
                             },
-                            addr: match action
-                                .and_then(|action| action.rewrite)
+                            addr: match rule
+                                .action
+                                .as_ref()
+                                .and_then(|action| action.rewrite.clone())
                                 .unwrap_or_default()
                                 .v4
                             {
@@ -308,8 +314,10 @@ impl Filter {
                                 class: 1,
                                 data_length: 0,
                             },
-                            addr: match action
-                                .and_then(|action| action.rewrite)
+                            addr: match rule
+                                .action
+                                .as_ref()
+                                .and_then(|action| action.rewrite.clone())
                                 .unwrap_or_default()
                                 .v6
                             {
@@ -320,6 +328,7 @@ impl Filter {
                     }
                     _ => {}
                 }
+                handler.rule = Some(rule);
                 packet.authorities = Vec::default();
                 packet.resources = Vec::default();
             }
@@ -330,16 +339,23 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{net::Ipv4Addr, path::Path};
 
     use pretty_assertions::assert_eq;
 
     use crate::{
         dns::{
-            header::Header, packet::Packet, qualified_name::QualifiedName, question::Question,
-            QueryType, ResultCode,
+            header::Header,
+            packet::{Packet, ResizableBuffer},
+            qualified_name::QualifiedName,
+            question::Question,
+            QueryType, Record, ResultCode,
         },
-        filter::rules::{Kind, Rules},
+        filter::{
+            rules::{Kind, Rules},
+            FILTER,
+        },
+        server::handler::Handler,
     };
 
     use super::Filter;
@@ -438,5 +454,56 @@ mod tests {
         let rule = rule.unwrap();
         assert_eq!(rule.ty, Kind::Deny);
         assert_eq!(rule.domain, "*mail.com");
+    }
+
+    #[test]
+    fn apply() {
+        let mut filter = Filter::default();
+
+        let mut packet = Packet {
+            header: Header {
+                id: 0,
+                recursion_desired: true,
+                truncated_message: false,
+                authoritative_answer: false,
+                opcode: 0,
+                response: true,
+                rescode: ResultCode::NOERROR,
+                checking_disabled: false,
+                authed_data: true,
+                z: false,
+                recursion_available: true,
+                questions: 1,
+                answers: 0,
+                authoritative_entries: 0,
+                resource_entries: 0,
+            },
+            questions: vec![Question {
+                name: QualifiedName("gmail.com".into()),
+                qtype: QueryType::A,
+                class: 1u16,
+            }],
+            answers: vec![],
+            authorities: vec![],
+            resources: vec![],
+        };
+
+        let mut handler = Handler::<ResizableBuffer>::default();
+
+        let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
+        filter.rules.insert(entries);
+        *FILTER.try_write().unwrap() = filter;
+
+        Filter::apply(&mut handler, &mut packet);
+
+        assert!(handler.rule.is_some());
+        let rule = handler.rule.unwrap();
+
+        assert!(rule.action.is_some());
+
+        match &packet.answers[0] {
+            Record::A { addr, .. } => assert_eq!(addr, &Ipv4Addr::UNSPECIFIED),
+            _ => unreachable!(),
+        }
     }
 }

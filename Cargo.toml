@@ -22,9 +22,20 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
-bstr = { version = "1", default-features = false, features = ["alloc", "serde"] }
-chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-clap = { version = "4", default-features = false, features = ["derive", "help", "std", "usage"] }
+bstr = { version = "1", default-features = false, features = [
+    "alloc",
+    "serde",
+] }
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+    "serde",
+] }
+clap = { version = "4", default-features = false, features = [
+    "derive",
+    "help",
+    "std",
+    "usage",
+] }
 const_format = "0.2"
 futures = "0.3"
 humantime-serde = "1"
@@ -38,15 +49,35 @@ serde_json = "1"
 signal-hook = "0.3"
 signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 thiserror = "1"
-tokio = { version = "1", default-features = false, features = ["net", "macros", "parking_lot", "rt-multi-thread", "time", "tracing"] }
+tokio = { version = "1", default-features = false, features = [
+    "net",
+    "macros",
+    "parking_lot",
+    "rt-multi-thread",
+    "time",
+    "tracing",
+] }
 toml = "0.7.1"
-tracing = { version = "0.1", default-features = false, features = ["attributes", "std"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "fmt", "parking_lot", "smallvec", "tracing-log"] }
+tracing = { version = "0.1", default-features = false, features = [
+    "attributes",
+    "std",
+] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "ansi",
+    "fmt",
+    "parking_lot",
+    "smallvec",
+    "tracing-log",
+] }
 ureq = { version = "2", default-features = false, features = ["gzip", "tls"] }
 warp = { version = "0.3", default-features = false }
 
 [dev-dependencies]
-criterion = { version = "0.4", default-features = false, features = ["html_reports", "plotters", "real_blackbox"] }
+criterion = { version = "0.4", default-features = false, features = [
+    "html_reports",
+    "plotters",
+    "real_blackbox",
+] }
 pretty_assertions = "1"
 
 [profile.release]

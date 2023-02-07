@@ -33,51 +33,47 @@ pub mod statistics;
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, DNSError> {
     let port = config::Config::get(|config| config.port).await;
 
-    match server::udp::Server::builder()
+    let udp = match server::udp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
         .on(port)
         .build()
         .await
     {
-        Ok(server) => tokio::spawn({
-            let shutdown_signal = shutdown_signal.clone();
-            async move { server.run(shutdown_signal).await }
-        }),
+        Ok(server) => tokio::spawn(async move { server.run().await }),
         Err(err) => {
             return Err(err);
         }
     };
 
-    match server::tcp::Server::builder()
+    let tcp = match server::tcp::Server::builder()
         .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
         .on(port)
         .build()
         .await
     {
-        Ok(server) => tokio::spawn({
-            let shutdown_signal = shutdown_signal.clone();
-            async move { server.run(shutdown_signal.clone()).await }
-        }),
+        Ok(server) => tokio::spawn(async move { server.run().await }),
         Err(err) => {
             return Err(err);
         }
     };
 
-    tokio::spawn({
-        let shutdown_signal = shutdown_signal.clone();
+    let scheduler = tokio::spawn({
         async move {
-            schedule::Scheduler::init(
-                shutdown_signal,
-                config::Config::get(|config| config.schedules.clone()).await,
-            )
-            .await;
+            schedule::Scheduler::init(config::Config::get(|config| config.schedules.clone()).await)
+                .await;
         }
     });
 
     tokio::spawn(async move { api::Server.run().await });
 
     Ok(tokio::spawn(async move {
-        shutdown_signal.changed().await.expect("Failed to shutdown");
+        tokio::select! {
+            _ = udp => {}
+            _ = tcp => {}
+            _ = scheduler => {}
+            _ = shutdown_signal.changed() => {}
+        }
+
         Config::save().await.expect("Failed to save config");
         drop(shutdown_signal);
     }))

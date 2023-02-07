@@ -40,11 +40,12 @@ impl<'a, T: IO> WriteTo<'a, T> for QualifiedName {
             self.name()
                 .split(|&c| c == b'.')
                 .try_fold(out, |buffer, label| {
-                    let len = label.len();
+                    let len = u8::try_from(label.len())
+                        .expect("Length of QualifiedName is greater than 8 bits");
                     if len > 0x3f {
                         Err(DNSError::InvalidPacket)
                     } else {
-                        buffer.write(len as u8)?.write(label.as_bytes())
+                        buffer.write(len)?.write(label.as_bytes())
                     }
                 })?
                 .write(0u8)

@@ -62,7 +62,9 @@ impl Cache {
                     packet.answers.iter_mut().zip(expires.into_iter()).for_each(
                         |(answer, expire)| {
                             answer.record().unwrap().ttl =
-                                ((expire - Utc::now()).num_seconds() as u32).into();
+                                u32::try_from((expire - Utc::now()).num_seconds())
+                                    .expect("Invalid expiry")
+                                    .into();
                         },
                     );
 

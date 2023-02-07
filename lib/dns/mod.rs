@@ -504,7 +504,7 @@ impl<'a, T: IO> WriteTo<'a, T> for Record {
                 .write(QueryType::OPT)?
                 .write(packet_len)?
                 .write(flags)?
-                .write(data.len() as u16)?
+                .write(u16::try_from(data.len()).expect("Length is too long for a u16"))?
                 .write(data),
             Record::DS {
                 record,
@@ -777,11 +777,11 @@ impl<I: IO> FromBuffer<I> for Record {
                 let flags = buffer.read()?;
                 let iterations = buffer.read()?;
 
-                let salt_length = buffer.read()?;
-                let salt = buffer.read_range(salt_length)?.to_vec();
+                let salt_length = buffer.read::<u8>()?;
+                let salt = buffer.read_range(salt_length as usize)?.to_vec();
 
-                let hash_length = buffer.read()?;
-                let hash = buffer.read_range(hash_length)?.to_vec();
+                let hash_length = buffer.read::<u8>()?;
+                let hash = buffer.read_range(hash_length as usize)?.to_vec();
 
                 let Some(map_len) = (record.data_length as usize).checked_sub(buffer.pos() - start) else {
                     return Err(DNSError::InvalidPacket);
@@ -794,9 +794,9 @@ impl<I: IO> FromBuffer<I> for Record {
                     algorithm,
                     flags,
                     iterations,
-                    salt_length: salt_length as u8,
+                    salt_length,
                     salt,
-                    hash_length: hash_length as u8,
+                    hash_length,
                     hash,
                     type_map,
                 })
@@ -806,15 +806,15 @@ impl<I: IO> FromBuffer<I> for Record {
                 let flags = buffer.read()?;
                 let iterations = buffer.read()?;
 
-                let salt_length = buffer.read()?;
+                let salt_length = buffer.read::<u8>()?;
 
                 Ok(Record::NSEC3PARAM {
                     record,
                     algorithm,
                     flags,
                     iterations,
-                    salt_length: salt_length as u8,
-                    salt: buffer.read_range(salt_length)?.to_vec(),
+                    salt_length,
+                    salt: buffer.read_range(salt_length as usize)?.to_vec(),
                 })
             }
             QueryType::SVCB | QueryType::HTTPS => {

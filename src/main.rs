@@ -88,10 +88,12 @@ async fn main() {
 
     tokio::select! {
         _ = blackhole_handle => {}
-        _ = signals_handle => {
-            info!("Shutting down");
-            shutdown.send(true).expect("There was an issue shutting down");
-            shutdown.closed().await;
-        }
-    }
+        _ = signals_handle => {}
+    };
+
+    info!("Shutting down");
+    shutdown
+        .send(true)
+        .expect("There was an issue shutting down");
+    shutdown.closed().await;
 }
