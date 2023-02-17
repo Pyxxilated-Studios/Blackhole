@@ -22,10 +22,8 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
-bstr = { version = "1", default-features = false, features = [
-    "alloc",
-    "serde",
-] }
+async-trait = "0.1"
+bstr = { version = "1", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
     "serde",
@@ -46,14 +44,13 @@ regex = "1"
 rustc-hash = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = "1"
-signal-hook = "0.3"
-signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 thiserror = "1"
 tokio = { version = "1", default-features = false, features = [
     "net",
     "macros",
     "parking_lot",
     "rt-multi-thread",
+    "signal",
     "time",
     "tracing",
 ] }
@@ -69,7 +66,26 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "smallvec",
     "tracing-log",
 ] }
-ureq = { version = "2", default-features = false, features = ["gzip", "tls"] }
+trust-dns-proto = { version = "0.22", default-features = false, features = [
+    "dns-over-https-rustls",
+    "dns-over-rustls",
+    "dnssec-openssl",
+] }
+trust-dns-resolver = { version = "0.22", default-features = false, features = [
+    "dns-over-https-rustls",
+    "dns-over-rustls",
+    "dnssec-openssl",
+] }
+trust-dns-server = { version = "0.22", default-features = false, features = [
+    "dns-over-https-rustls",
+    "dns-over-rustls",
+    "dnssec-openssl",
+] }
+ureq = { version = "2", default-features = false, features = [
+    "brotli",
+    "gzip",
+    "tls",
+] }
 warp = { version = "0.3", default-features = false }
 
 [dev-dependencies]

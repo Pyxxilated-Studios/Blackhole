@@ -1,107 +1,11 @@
-use std::{convert::TryInto, path::Path};
+use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-
-use blackhole::dns::{
-    header::Header,
-    packet::{Buffer, Packet, ResizableBuffer},
-    qualified_name::QualifiedName,
-    question::Question,
-    traits::FromBuffer,
-    DNSError, QueryType, Record, ResultCode, Ttl, RR,
+use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
+use trust_dns_server::{
+    authority::MessageRequest,
+    server::{Protocol, Request},
 };
-
-fn packet() -> Packet {
-    Packet {
-        header: Header {
-            id: 56029,
-            recursion_desired: true,
-            truncated_message: false,
-            authoritative_answer: false,
-            opcode: 0,
-            response: true,
-            rescode: ResultCode::NOERROR,
-            checking_disabled: false,
-            authed_data: true,
-            z: false,
-            recursion_available: true,
-            questions: 1,
-            answers: 2,
-            authoritative_entries: 0,
-            resource_entries: 0,
-        },
-        questions: vec![Question {
-            name: QualifiedName("gmail.com".into()),
-            qtype: QueryType::MX,
-            class: 0,
-        }],
-        answers: vec![
-            Record::MX {
-                record: RR {
-                    domain: QualifiedName("gmail.com".into()),
-                    ttl: Ttl(3600),
-                    query_type: QueryType::MX,
-                    class: 1,
-                    data_length: 20,
-                },
-                priority: 10,
-                host: QualifiedName("mail.gmail.com".into()),
-            },
-            Record::MX {
-                record: RR {
-                    domain: QualifiedName("gmail.com".into()),
-                    ttl: Ttl(3600),
-                    query_type: QueryType::MX,
-                    class: 1,
-                    data_length: 23,
-                },
-                priority: 20,
-                host: QualifiedName("mailsec.gmail.com".into()),
-            },
-        ],
-        authorities: vec![],
-        resources: vec![],
-    }
-}
-
-fn create_buffer<T>() -> T
-where
-    Packet: TryInto<T, Error = DNSError>,
-{
-    packet().try_into().unwrap()
-}
-
-pub fn packet_to_buffer(c: &mut Criterion) {
-    c.bench_function("creating a buffer", |b| {
-        let packet = packet();
-
-        b.iter(|| black_box(Buffer::try_from(packet.clone()).unwrap()))
-    });
-}
-
-pub fn buffer_to_packet(c: &mut Criterion) {
-    c.bench_function("creating a packet", |b| {
-        let mut buffer = create_buffer::<Buffer>();
-
-        b.iter(|| black_box(Packet::from_buffer(&mut buffer).unwrap()))
-    });
-}
-
-pub fn packet_to_resizeable_buffer(c: &mut Criterion) {
-    c.bench_function("creating a resizeable buffer", |b| {
-        let packet = packet();
-
-        b.iter(|| black_box(ResizableBuffer::try_from(packet.clone()).unwrap()))
-    });
-}
-
-pub fn resizeable_buffer_to_packet(c: &mut Criterion) {
-    c.bench_function("creating a packet from a resizeable buffer", |b| {
-        let mut buffer = create_buffer::<ResizableBuffer>();
-
-        b.iter(|| black_box(Packet::from_buffer(&mut buffer).unwrap()))
-    });
-}
 
 fn filter_parsing(c: &mut Criterion) {
     c.bench_function("parsing a filter list", |b| {
@@ -120,19 +24,21 @@ fn filter_checking(c: &mut Criterion) {
             blackhole::filter::rules::Rules::parse(Path::new("benches/test.txt")).unwrap();
         filter.rules.insert(entries);
 
-        let packet = packet();
+        let request = Request::new(
+            MessageRequest::read(&mut BinDecoder::new(&[
+                0xf6, 0x3d, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x67,
+                0x6d, 0x61, 0x69, 0x6c, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+                0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x0a, 0x00, 0x08,
+                0xcf, 0xef, 0x93, 0x5b, 0x92, 0xad, 0x6e, 0xdf,
+            ]))
+            .unwrap(),
+            "127.0.0.1:53".parse().unwrap(),
+            Protocol::Udp,
+        );
 
-        b.iter(|| black_box(filter.filter(&packet)))
+        b.iter(|| black_box(filter.filter(&request)))
     });
 }
 
-criterion_group!(
-    benches,
-    packet_to_buffer,
-    buffer_to_packet,
-    packet_to_resizeable_buffer,
-    resizeable_buffer_to_packet,
-    filter_parsing,
-    filter_checking
-);
+criterion_group!(benches, filter_parsing, filter_checking);
 criterion_main!(benches);

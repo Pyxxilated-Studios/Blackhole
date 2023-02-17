@@ -8,15 +8,11 @@ use chrono::{DateTime, Utc};
 use const_format::concatcp;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use tracing::{field::Visit, instrument, log::trace, Subscriber};
+use tracing::{field::Visit, instrument, trace, Subscriber};
 use tracing_subscriber::{registry::LookupSpan, Layer};
+use trust_dns_proto::rr::Record;
 
-use crate::{
-    dns::Record as Answer,
-    dns::{question::Question, ResultCode},
-    filter::rules::Rule,
-    server::handler::Handler,
-};
+use crate::filter::rules::Rule;
 
 static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
 
@@ -95,13 +91,14 @@ pub struct Cache {
     pub misses: usize,
 }
 
-#[derive(Serialize, Clone, Default)]
+#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[derive(Serialize, Clone, Deserialize)]
 pub struct Request {
     pub client: String,
-    pub question: Question,
-    pub answers: Vec<Answer>,
+    pub question: String,
+    pub answers: Vec<Record>,
     pub rule: Option<Rule>,
-    pub status: ResultCode,
+    pub status: String,
     pub elapsed: usize,
     pub timestamp: DateTime<Utc>,
     pub cached: bool,
@@ -123,19 +120,19 @@ impl Visit for StatisticsVisitor {
         if field.name().starts_with(REQUESTS_PREFIX) {
             #[cfg_attr(any(debug_assertions, test), derive(Debug))]
             #[derive(Deserialize)]
-            struct Request<Buff> {
-                request: Handler<Buff>,
+            struct Request {
+                request: crate::statistics::Request,
             }
 
-            let request = serde_json::from_str::<Request<()>>(value).unwrap().request;
-            let request: crate::statistics::Request = request.into();
-            Statistics::record(crate::statistics::Statistic::Average(
-                crate::statistics::Average {
-                    count: 1,
-                    average: request.elapsed,
-                },
-            ));
-            Statistics::record(crate::statistics::Statistic::Request(request));
+            if let Ok(Request { request }) = serde_json::from_str::<Request>(value) {
+                Statistics::record(crate::statistics::Statistic::Average(
+                    crate::statistics::Average {
+                        count: 1,
+                        average: request.elapsed,
+                    },
+                ));
+                Statistics::record(crate::statistics::Statistic::Request(request));
+            }
         }
     }
 

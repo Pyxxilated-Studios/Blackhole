@@ -2,24 +2,19 @@ use core::mem::size_of;
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
-use bstr::BString;
 use chrono::{DateTime, Duration, Utc};
 use rustc_hash::FxHashMap;
 use tokio::sync::RwLock;
+use trust_dns_proto::{rr::RecordType, xfer::DnsResponse};
+use trust_dns_server::server::Request;
 
-use crate::{
-    dns::{
-        packet::{Packet, DNS_PACKET_SIZE},
-        QueryType,
-    },
-    statistics::{self, Statistic, Statistics},
-};
+use crate::statistics::{self, Statistic, Statistics};
 
-type PacketExpires = (Packet, Vec<DateTime<Utc>>);
-type Entry = FxHashMap<QueryType, PacketExpires>;
+type PacketExpires = (DnsResponse, Vec<DateTime<Utc>>);
+type Entry = FxHashMap<RecordType, PacketExpires>;
 
 pub struct Cache {
-    cache: FxHashMap<BString, Entry>,
+    cache: FxHashMap<String, Entry>,
 }
 
 impl Default for Cache {
@@ -40,46 +35,48 @@ impl Cache {
     /// The only way this may panic is if one of the answer
     /// records does not have a TTL (e.g. [`OPT`])
     ///
-    pub async fn get(packet: &Packet) -> Option<Packet> {
-        let cache = CACHE.read().await;
+    pub async fn get(request: &Request) -> Option<DnsResponse> {
+        let cache = &*CACHE.read().await;
 
         let response = cache
             .cache
-            .get(packet.questions[0].name.name())
-            .and_then(|entry| entry.get(&packet.questions[0].qtype));
+            .get(&request.query().original().name().to_string())
+            .and_then(|entry| entry.get(&request.query().query_type()));
 
-        match response.cloned() {
-            Some((mut packet, expires)) => {
-                if expires.iter().any(|expire| *expire < Utc::now()) {
-                    None
-                } else {
+        let now = Utc::now();
+
+        response
+            .cloned()
+            .map(|(mut response, expires)| {
+                expires.iter().all(|expire| *expire >= now).then(|| {
                     Statistics::record(Statistic::Cache(statistics::Cache {
                         hits: 1,
                         misses: 0,
                         size: 0,
                     }));
 
-                    packet.answers.iter_mut().zip(expires.into_iter()).for_each(
-                        |(answer, expire)| {
-                            answer.record().unwrap().ttl =
-                                u32::try_from((expire - Utc::now()).num_seconds())
-                                    .expect("Invalid expiry")
-                                    .into();
-                        },
-                    );
+                    response
+                        .answers_mut()
+                        .iter_mut()
+                        .zip(expires.into_iter())
+                        .for_each(|(answer, expire)| {
+                            answer.set_ttl(
+                                u32::try_from((expire - now).num_seconds())
+                                    .expect("Invalid expiry"),
+                            );
+                        });
 
-                    Some(packet)
-                }
-            }
-            None => None,
-        }
+                    response
+                })
+            })
+            .unwrap_or_default()
     }
 
-    pub async fn insert(packet: &Packet) {
+    pub async fn insert(response: &DnsResponse) {
         let mut cache = CACHE.write().await;
 
-        let key = packet.questions[0].name.name().clone();
-        let sub_key = packet.questions[0].qtype;
+        let key = response.queries()[0].name().to_string();
+        let sub_key = response.queries()[0].query_type();
 
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
@@ -90,18 +87,15 @@ impl Cache {
                 .map(|inner| inner.contains_key(&sub_key))
             {
                 Some(true) => 0,
-                Some(false) => size_of::<Entry>() + DNS_PACKET_SIZE,
-                None => key.capacity() + size_of::<Entry>() + DNS_PACKET_SIZE,
+                Some(false) => size_of::<Entry>(),
+                None => key.capacity() + size_of::<Entry>(),
             },
         }));
 
-        let value = packet
-            .answers
+        let value: Vec<_> = response
+            .answers()
             .iter()
-            .map(|answer| {
-                Utc::now()
-                    + Duration::seconds(i64::from(u32::from(answer.ttl().unwrap_or_default())))
-            })
+            .map(|answer| Utc::now() + Duration::seconds(i64::from(answer.ttl())))
             .collect();
 
         *cache
@@ -109,6 +103,6 @@ impl Cache {
             .entry(key)
             .or_default()
             .entry(sub_key)
-            .or_default() = (packet.clone(), value);
+            .or_insert((response.clone(), value)) = (response.clone(), value.clone());
     }
 }
