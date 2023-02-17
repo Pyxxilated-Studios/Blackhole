@@ -2,13 +2,13 @@
 #![forbid(unsafe_code)]
 #![feature(async_fn_in_trait)]
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
-use futures::StreamExt;
-use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
-use signal_hook_tokio::Signals;
-use tokio::sync::watch::channel;
+use tokio::{
+    signal::unix::{signal, SignalKind},
+    sync::watch::channel,
+};
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
@@ -61,7 +61,10 @@ async fn main() {
     )
     .await
     .unwrap_or_default();
-    blackhole::config::Config::load(&cli).await.unwrap();
+
+    blackhole::config::Config::load(&cli)
+        .await
+        .unwrap_or_default();
 
     let (shutdown, shutdown_signal) = channel(false);
 
@@ -73,27 +76,23 @@ async fn main() {
         }
     };
 
-    let mut signals =
-        Signals::new([SIGTERM, SIGINT, SIGQUIT]).expect("Could not set signal handler");
-    let signals_handle = tokio::spawn(async move {
-        while let Some(signal) = signals.next().await {
-            match signal {
-                SIGTERM | SIGINT | SIGQUIT => {
-                    return;
-                }
-                _ => unreachable!(),
-            }
-        }
-    });
+    let mut sigterm = signal(SignalKind::terminate()).unwrap();
+    let mut sigint = signal(SignalKind::interrupt()).unwrap();
+    let mut sigquit = signal(SignalKind::quit()).unwrap();
 
     tokio::select! {
         _ = blackhole_handle => {}
-        _ = signals_handle => {}
+        _ = sigint.recv() => {}
+        _ = sigquit.recv() => {}
+        _ = sigterm.recv() => {}
     };
 
     info!("Shutting down");
     shutdown
         .send(true)
         .expect("There was an issue shutting down");
-    shutdown.closed().await;
+
+    tokio::time::timeout(Duration::from_secs(10), shutdown.closed())
+        .await
+        .unwrap_or_default();
 }

@@ -4,7 +4,7 @@ use clap::Parser;
 
 use blackhole::{
     config::{Error, Load},
-    server::Upstream,
+    dns::server::Upstream,
 };
 
 #[derive(Parser)]

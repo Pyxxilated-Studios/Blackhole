@@ -7,11 +7,21 @@
     once_cell,
     option_get_or_insert_default
 )]
+#![feature(async_closure)]
 
-use std::net::{IpAddr, Ipv6Addr};
+use std::{
+    io,
+    net::{IpAddr, Ipv6Addr, ToSocketAddrs},
+    time::Duration,
+};
 
-use dns::DNSError;
-use tokio::{sync::watch::Receiver, task::JoinHandle};
+use tokio::{
+    net::{TcpListener, UdpSocket},
+    sync::watch::Receiver,
+    task::JoinHandle,
+};
+use tracing::info;
+use trust_dns_server::ServerFuture;
 
 use crate::config::Config;
 
@@ -21,7 +31,6 @@ pub mod config;
 pub mod dns;
 pub mod filter;
 pub mod schedule;
-pub mod server;
 pub mod statistics;
 
 ///
@@ -30,32 +39,8 @@ pub mod statistics;
 /// # Errors
 /// If there are issues during startup
 ///
-pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, DNSError> {
+pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
     let port = config::Config::get(|config| config.port).await;
-
-    let udp = match server::udp::Server::builder()
-        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
-        .on(port)
-        .build()
-        .await
-    {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
-        Err(err) => {
-            return Err(err);
-        }
-    };
-
-    let tcp = match server::tcp::Server::builder()
-        .listen(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
-        .on(port)
-        .build()
-        .await
-    {
-        Ok(server) => tokio::spawn(async move { server.run().await }),
-        Err(err) => {
-            return Err(err);
-        }
-    };
 
     let scheduler = tokio::spawn({
         async move {
@@ -64,12 +49,39 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
         }
     });
 
-    tokio::spawn(async move { api::Server.run().await });
+    let dns_server = {
+        let mut server = ServerFuture::new(match dns::server::Server::new().await {
+            Ok(server) => server,
+            Err(err) => {
+                // This realistically should not happen
+                return Err(err.into());
+            }
+        });
+        server.register_socket(UdpSocket::bind((IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)).await?);
+        server.register_listener(
+            TcpListener::bind((IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)).await?,
+            Duration::from_secs(30),
+        );
+
+        tokio::spawn(async move {
+            info!(
+                "Running DNS server on {:#?}",
+                (IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
+                    .to_socket_addrs()
+                    .expect("Unable to parse Server Address")
+                    .next()
+                    .expect("Unable to parse Server Address")
+            );
+            server.block_until_done().await.expect("Issue");
+        })
+    };
+
+    let api = tokio::spawn(async move { api::Server.run().await });
 
     Ok(tokio::spawn(async move {
         tokio::select! {
-            _ = udp => {}
-            _ = tcp => {}
+            _ = api => {}
+            _ = dns_server => {}
             _ = scheduler => {}
             _ = shutdown_signal.changed() => {}
         }

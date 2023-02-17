@@ -2,7 +2,6 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     io::Read,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
     sync::LazyLock,
     time::SystemTime,
@@ -15,18 +14,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 use tracing::{error, info, instrument};
+use trust_dns_server::server::Request;
 
-use crate::{
-    config::Config,
-    dns::{
-        packet::Packet, qualified_name::QualifiedName, question::Question, QueryType, Record,
-        ResultCode, Ttl, RR,
-    },
-    schedule::Sched,
-    server::handler::Handler,
-};
+use crate::{config::Config, schedule::Sched};
 
-use self::rules::{Kind, Rule, Rules};
+use self::rules::{Rule, Rules};
 
 pub mod rules;
 
@@ -152,31 +144,43 @@ impl Filter {
                 )));
             };
 
-            let mut len = response
-                .header("Content-Length")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap();
-
-            let mut response = response.into_reader();
             let mut writer = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .open(list.to_string())
                 .await?;
 
-            while len > 0 {
-                let mut bytes = [0; 8192];
-                let length = response.read(&mut bytes).unwrap_or_default();
+            match response
+                .header("Content-Length")
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                Some(mut len) => {
+                    let mut response = response.into_reader();
 
-                match writer.write_all(&bytes[..length]).await {
-                    Err(err) if err.kind() != tokio::io::ErrorKind::Other => error!("{err}"),
-                    Err(_) => {
-                        break;
+                    while len > 0 {
+                        let mut bytes = [0; 8192];
+                        let length = response.read(&mut bytes).unwrap_or_default();
+
+                        match writer.write_all(&bytes[..length]).await {
+                            Err(err) if err.kind() != tokio::io::ErrorKind::Other => {
+                                error!("{err}");
+                                return Err(err.into());
+                            }
+                            Err(_) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+
+                        len -= length;
                     }
-                    _ => {}
                 }
-
-                len -= length;
+                None => {
+                    writer
+                        .write_all(response.into_string().unwrap().as_bytes())
+                        .await
+                        .expect("");
+                }
             }
         }
 
@@ -233,11 +237,12 @@ impl Filter {
         }
     }
 
-    pub fn filter(&self, packet: &Packet) -> Option<Rule> {
-        packet.questions[0]
-            .name
+    pub fn filter(&self, request: &Request) -> Option<Rule> {
+        request
+            .query()
+            .original()
             .name()
-            .split(|&c| c == b'.')
+            .into_iter()
             .rev()
             .try_fold(&self.rules, |current_node, entry| {
                 if let Some(entry) = current_node.children.get(entry.as_bstr()) {
@@ -261,102 +266,64 @@ impl Filter {
             .clone()
     }
 
-    pub fn check(packet: &Packet) -> Option<Rule> {
-        FILTER
-            .try_read()
-            .map(|filter| filter.filter(packet))
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn apply<Buff>(handler: &mut Handler<Buff>, packet: &mut Packet) {
-        match Filter::check(packet) {
-            Some(rule) if rule.ty == Kind::Deny => {
-                packet.header.recursion_available = true;
-                packet.header.response = true;
-                packet.header.rescode = ResultCode::NOERROR;
-                packet.header.truncated_message = false;
-                match packet.questions.first() {
-                    Some(Question {
-                        qtype: QueryType::A,
-                        ..
-                    }) => {
-                        packet.header.answers = 1;
-                        packet.answers = vec![Record::A {
-                            record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name().clone()),
-                                ttl: Ttl(600),
-                                query_type: QueryType::A,
-                                class: 1,
-                                data_length: 0,
-                            },
-                            addr: match rule
-                                .action
-                                .as_ref()
-                                .and_then(|action| action.rewrite.clone())
-                                .unwrap_or_default()
-                                .v4
-                            {
-                                IpAddr::V4(addr) => addr,
-                                IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
-                            },
-                        }];
-                    }
-                    Some(Question {
-                        qtype: QueryType::AAAA,
-                        ..
-                    }) => {
-                        packet.header.answers = 1;
-                        packet.answers = vec![Record::AAAA {
-                            record: RR {
-                                domain: QualifiedName(packet.questions[0].name.name().clone()),
-                                ttl: Ttl(600),
-                                query_type: QueryType::AAAA,
-                                class: 1,
-                                data_length: 0,
-                            },
-                            addr: match rule
-                                .action
-                                .as_ref()
-                                .and_then(|action| action.rewrite.clone())
-                                .unwrap_or_default()
-                                .v6
-                            {
-                                IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
-                                IpAddr::V6(addr) => addr,
-                            },
-                        }];
-                    }
-                    _ => {}
-                }
-                handler.rule = Some(rule);
-                packet.authorities = Vec::default();
-                packet.resources = Vec::default();
-            }
-            _ => {}
+    ///
+    /// Check if the request's query matches any of the filters we have.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use blackhole::filter::Filter;
+    /// use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
+    /// use trust_dns_server::{
+    ///    authority::MessageRequest,
+    ///    server::{Protocol, Request},
+    /// };
+    ///
+    /// let request = Request::new(
+    ///        MessageRequest::read(&mut BinDecoder::new(&[
+    ///            0xf6, 0x3d, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x67,
+    ///            0x6d, 0x61, 0x69, 0x6c, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    ///            0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x0a, 0x00, 0x08,
+    ///            0xcf, 0xef, 0x93, 0x5b, 0x92, 0xad, 0x6e, 0xdf,
+    ///        ]))
+    ///        .unwrap(),
+    ///     "127.0.0.1:53".parse().unwrap(),
+    ///      Protocol::Udp,
+    /// );
+    ///
+    /// assert_eq!(Filter::check(&request), None);
+    /// ```
+    ///
+    /// # Returns
+    /// If there is a rule that matches, then Some(rule).
+    /// Otherwise, None.
+    ///
+    pub fn check(request: &Request) -> Option<Rule> {
+        // We currently only support A/AAAA query filtering.
+        // TODO: Would this be worth expanding?
+        if request.query().query_type().is_ip_addr() {
+            FILTER
+                .try_read()
+                .map(|filter| filter.filter(request))
+                .unwrap_or_default()
+        } else {
+            None
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, path::Path};
+    use std::path::Path;
 
     use pretty_assertions::assert_eq;
-
-    use crate::{
-        dns::{
-            header::Header,
-            packet::{Packet, ResizableBuffer},
-            qualified_name::QualifiedName,
-            question::Question,
-            QueryType, Record, ResultCode,
-        },
-        filter::{
-            rules::{Kind, Rules},
-            FILTER,
-        },
-        server::handler::Handler,
+    use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
+    use trust_dns_server::{
+        authority::MessageRequest,
+        server::{Protocol, Request},
     };
+
+    use crate::filter::rules::{Kind, Rules};
 
     use super::Filter;
 
@@ -368,45 +335,29 @@ mod tests {
         assert!(entries.is_ok());
 
         let entries = entries.unwrap();
-        assert_eq!(filter.rules.insert(entries), 81561);
+        assert_eq!(filter.rules.insert(entries), 81562);
     }
 
     #[test]
     fn checking() {
         let mut filter = Filter::default();
 
-        let packet = Packet {
-            header: Header {
-                id: 0,
-                recursion_desired: true,
-                truncated_message: false,
-                authoritative_answer: false,
-                opcode: 0,
-                response: true,
-                rescode: ResultCode::NOERROR,
-                checking_disabled: false,
-                authed_data: true,
-                z: false,
-                recursion_available: true,
-                questions: 1,
-                answers: 0,
-                authoritative_entries: 0,
-                resource_entries: 0,
-            },
-            questions: vec![Question {
-                name: QualifiedName("zz3r0.com".into()),
-                qtype: QueryType::A,
-                class: 1u16,
-            }],
-            answers: vec![],
-            authorities: vec![],
-            resources: vec![],
-        };
+        let request = Request::new(
+            MessageRequest::read(&mut BinDecoder::new(&[
+                0x9b, 0x09, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x06, 0x67,
+                0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01,
+                0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x0a, 0x00,
+                0x08, 0x33, 0x70, 0x1c, 0x9b, 0x66, 0xe1, 0xb6, 0x12,
+            ]))
+            .unwrap(),
+            "127.0.0.1:53".parse().unwrap(),
+            Protocol::Udp,
+        );
 
         let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
         filter.rules.insert(entries);
 
-        let rule = filter.filter(&packet);
+        let rule = filter.filter(&request);
         assert!(rule.is_some());
 
         let rule = rule.unwrap();
@@ -417,93 +368,26 @@ mod tests {
     fn regex_matching() {
         let mut filter = Filter::default();
 
-        let packet = Packet {
-            header: Header {
-                id: 0,
-                recursion_desired: true,
-                truncated_message: false,
-                authoritative_answer: false,
-                opcode: 0,
-                response: true,
-                rescode: ResultCode::NOERROR,
-                checking_disabled: false,
-                authed_data: true,
-                z: false,
-                recursion_available: true,
-                questions: 1,
-                answers: 0,
-                authoritative_entries: 0,
-                resource_entries: 0,
-            },
-            questions: vec![Question {
-                name: QualifiedName("gmail.com".into()),
-                qtype: QueryType::A,
-                class: 1u16,
-            }],
-            answers: vec![],
-            authorities: vec![],
-            resources: vec![],
-        };
+        let request = Request::new(
+            MessageRequest::read(&mut BinDecoder::new(&[
+                0xf6, 0x3d, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x67,
+                0x6d, 0x61, 0x69, 0x6c, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+                0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x0a, 0x00, 0x08,
+                0xcf, 0xef, 0x93, 0x5b, 0x92, 0xad, 0x6e, 0xdf,
+            ]))
+            .unwrap(),
+            "127.0.0.1:53".parse().unwrap(),
+            Protocol::Udp,
+        );
 
         let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
         filter.rules.insert(entries);
 
-        let rule = filter.filter(&packet);
+        let rule = filter.filter(&request);
         assert!(rule.is_some());
 
         let rule = rule.unwrap();
         assert_eq!(rule.ty, Kind::Deny);
         assert_eq!(rule.domain, "*mail.com");
-    }
-
-    #[test]
-    fn apply() {
-        let mut filter = Filter::default();
-
-        let mut packet = Packet {
-            header: Header {
-                id: 0,
-                recursion_desired: true,
-                truncated_message: false,
-                authoritative_answer: false,
-                opcode: 0,
-                response: true,
-                rescode: ResultCode::NOERROR,
-                checking_disabled: false,
-                authed_data: true,
-                z: false,
-                recursion_available: true,
-                questions: 1,
-                answers: 0,
-                authoritative_entries: 0,
-                resource_entries: 0,
-            },
-            questions: vec![Question {
-                name: QualifiedName("gmail.com".into()),
-                qtype: QueryType::A,
-                class: 1u16,
-            }],
-            answers: vec![],
-            authorities: vec![],
-            resources: vec![],
-        };
-
-        let mut handler = Handler::<ResizableBuffer>::default();
-
-        let entries = Rules::parse(Path::new("benches/test.txt")).unwrap();
-        filter.rules.insert(entries);
-        *FILTER.try_write().unwrap() = filter;
-
-        Filter::apply(&mut handler, &mut packet);
-
-        assert!(handler.rule.is_some());
-        let rule = handler.rule.unwrap();
-
-        assert!(rule.action.is_some());
-
-        match &packet.answers[0] {
-            Record::A { addr, .. } => assert_eq!(addr, &Ipv4Addr::UNSPECIFIED),
-            _ => unreachable!(),
-        }
     }
 }

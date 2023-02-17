@@ -19,6 +19,12 @@ use nom::{
 use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use trust_dns_proto::{
+    op::{Message, MessageType, ResponseCode},
+    rr::{RData, Record, RecordType},
+    xfer::DnsResponse,
+};
+use trust_dns_server::server::Request;
 
 use super::Error;
 
@@ -68,6 +74,70 @@ pub struct Rule {
     pub(crate) domain: String,
     pub(crate) ty: Kind,
     pub(crate) action: Option<Action>,
+}
+
+impl Rule {
+    fn rule(&self, request: &Request) -> Vec<Record> {
+        match request.query().query_type() {
+            RecordType::A => vec![
+                Record::default()
+                    .set_name(request.query().original().name().clone())
+                    .set_rr_type(RecordType::A)
+                    .set_data(Some(RData::A(
+                        match self
+                            .action
+                            .as_ref()
+                            .and_then(|action| action.rewrite.clone())
+                            .unwrap_or_default()
+                            .v4
+                        {
+                            IpAddr::V4(addr) => addr,
+                            IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
+                        },
+                    )))
+                    .set_ttl(600)
+                    .clone(),
+            ],
+            RecordType::AAAA => vec![
+                Record::default()
+                    .set_name(request.query().original().name().clone())
+                    .set_rr_type(RecordType::AAAA)
+                    .set_data(Some(RData::AAAA(
+                        match self
+                            .action
+                            .as_ref()
+                            .and_then(|action| action.rewrite.clone())
+                            .unwrap_or_default()
+                            .v6
+                        {
+                            IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
+                            IpAddr::V6(addr) => addr,
+                        },
+                    )))
+                    .set_ttl(600)
+                    .clone(),
+            ],
+            _ => vec![Record::default()],
+        }
+    }
+
+    pub fn apply(&self, request: &Request) -> DnsResponse {
+        let answers = self.rule(request);
+
+        Message::new()
+            .set_header(
+                *request
+                    .header()
+                    .clone()
+                    .set_answer_count(answers.len().try_into().unwrap_or_default())
+                    .set_message_type(MessageType::Response)
+                    .set_response_code(ResponseCode::NoError),
+            )
+            .add_answers(answers)
+            .add_query(request.query().original().clone())
+            .clone()
+            .into()
+    }
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]

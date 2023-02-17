@@ -1,12 +1,16 @@
-port = 6380
+port = 53
 
 [[upstream]]
 ip = "9.9.9.9"
 port = 53
 
-# [[filter]]
-# name = "Energized"
-# url = "https://block.energized.pro/spark/formats/hosts"
+[[upstream]]
+ip = "1.1.1.1"
+port = 53
+
+[[filter]]
+name = "Energized"
+url = "https://o0.pages.dev/mini/domains.txt"
 
 [[schedule]]
 name = "Filters"

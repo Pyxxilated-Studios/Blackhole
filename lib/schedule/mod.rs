@@ -1,6 +1,10 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
+use futures::future::select_all;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::sleep};
@@ -21,13 +25,14 @@ pub enum Sched {
 }
 
 impl Sched {
+    #[instrument]
     async fn run(&self) {
         match self {
             Sched::Filters => {
                 Filter::reset().await;
             }
             Sched::Logs => {
-                let now = Utc::now()
+                let cutoff = Utc::now()
                     - chrono::Duration::from_std(
                         Config::get(|config| {
                             config
@@ -43,7 +48,7 @@ impl Sched {
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {
-                        requests.retain(|request| request.timestamp > now);
+                        requests.retain(|request| request.timestamp > cutoff);
                     }
                 });
             }
@@ -67,50 +72,62 @@ pub struct Schedule {
     pub schedule: Duration,
 }
 
+#[derive(Clone)]
+struct ScheduleInterval(Sched, Duration, Instant);
+
+impl std::future::Future for ScheduleInterval {
+    type Output = ();
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        if self.2.duration_since(std::time::Instant::now()).is_zero() {
+            std::task::Poll::Ready(())
+        } else {
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Scheduler {
-    schedules: FxHashMap<Sched, (DateTime<Utc>, Duration)>,
+    schedules: FxHashMap<Sched, (Instant, Duration)>,
 }
 
 impl Scheduler {
-    #[instrument()]
+    #[instrument]
     async fn run() {
         loop {
-            let mut soonest = Utc::now();
+            let schedules = SCHEDULER.read().await.schedules.clone();
 
-            let schedules = { SCHEDULER.read().await.schedules.clone() };
-
-            for (schedule, (at, time)) in schedules {
-                if at <= Utc::now() {
-                    trace!("Running schedule: {schedule:?}");
-
-                    schedule.run().await;
-
-                    let next = Self::schedule(Schedule {
-                        name: schedule,
-                        schedule: time,
-                    })
-                    .await;
-
-                    if next < soonest {
-                        soonest = next;
-                    }
-                } else if at < soonest {
-                    soonest = at;
-                }
+            if schedules.is_empty() {
+                sleep(Duration::from_secs(5)).await;
+                continue;
             }
 
-            sleep(
-                (soonest.time() - Utc::now().time())
-                    .to_std()
-                    .unwrap_or_default(),
-            )
+            let intervals = schedules
+                .into_iter()
+                .map(|(sched, (at, time))| ScheduleInterval(sched, time, at))
+                .collect::<Vec<_>>();
+            let (_, idx, _) = select_all(intervals.clone()).await;
+
+            let ScheduleInterval(schedule, next, _) = intervals[idx].clone();
+
+            trace!("Running schedule: {schedule:?}");
+            schedule.run().await;
+            trace!("Schedule completed");
+
+            Self::schedule(Schedule {
+                name: schedule,
+                schedule: next,
+            })
             .await;
         }
     }
 
-    #[instrument(skip(schedule))]
-    async fn schedule(schedule: Schedule) -> DateTime<Utc> {
+    async fn schedule(schedule: Schedule) -> Instant {
         trace!("Rescheduling {schedule:?}");
 
         SCHEDULER
@@ -119,19 +136,18 @@ impl Scheduler {
             .schedules
             .entry(schedule.name)
             .and_modify(|(when, sched)| {
-                *when = Utc::now() + chrono::Duration::from_std(schedule.schedule).unwrap();
+                *when = Instant::now().checked_add(*sched).unwrap();
                 *sched = schedule.schedule;
             })
             .or_insert_with(|| {
                 (
-                    Utc::now() + chrono::Duration::from_std(schedule.schedule).unwrap(),
+                    Instant::now().checked_add(schedule.schedule).unwrap(),
                     schedule.schedule,
                 )
             })
             .0
     }
 
-    #[instrument()]
     pub async fn init(schedules: Vec<Schedule>) {
         for schedule in schedules {
             schedule.name.init().await;

@@ -10,7 +10,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{filter::List, schedule::Schedule, server::Upstream};
+use crate::{dns::server::Upstream, filter::List, schedule::Schedule};
 
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
 static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
