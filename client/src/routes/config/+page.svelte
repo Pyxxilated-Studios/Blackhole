@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Config } from "src/types";
+    import type { Config } from "../../types";
     import { onMount } from "svelte";
 
     import { getNotificationsContext } from "svelte-notifications";

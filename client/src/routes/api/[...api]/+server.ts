@@ -1,6 +1,6 @@
 import type { RequestHandler } from "@sveltejs/kit";
 
-export const GET: RequestHandler = async ({ url, request }) => {
+export const GET: RequestHandler = async ({ url, request, fetch }) => {
     try {
         return await fetch(`http://127.0.0.1:5000${url.pathname}`, {
             ...request,
@@ -11,7 +11,9 @@ export const GET: RequestHandler = async ({ url, request }) => {
             (err.cause as Record<string, string>).code === "ECONNREFUSED"
         ) {
             return new Response(
-                JSON.stringify({ reason: "Failed to connect to API -- is it running?" }),
+                JSON.stringify({
+                    reason: "Failed to connect to API -- is it running?",
+                }),
                 { status: 500 }
             );
         }
@@ -20,7 +22,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
     }
 };
 
-export const POST: RequestHandler = async ({ url, request }) => {
+export const POST: RequestHandler = async ({ url, request, fetch }) => {
     try {
         return await fetch(`http://127.0.0.1:5000${url.pathname}`, {
             ...request,
@@ -36,7 +38,9 @@ export const POST: RequestHandler = async ({ url, request }) => {
             (err.cause as Record<string, string>).code === "ECONNREFUSED"
         ) {
             return new Response(
-                JSON.stringify({ reason: "Failed to connect to API -- is it running?" }),
+                JSON.stringify({
+                    reason: "Failed to connect to API -- is it running?",
+                }),
                 { status: 500 }
             );
         }

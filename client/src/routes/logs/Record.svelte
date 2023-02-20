@@ -1,18 +1,16 @@
 <script lang="ts">
-    export let ty: string;
-    export let record: Record<string, Record<string, unknown>>;
+    import type { Answer } from "../../types";
+
+    export let answer: Answer;
 </script>
 
 <p>
-    {ty}:
-    {#if ty === "MX"}
-        {record.host} Priority: {record.priority}
-    {:else if ty === "TXT"}
-        {record.data}
-    {:else if ty === "A" || ty === "AAAA"}
-        {record.addr}
-    {:else if ty === "CNAME"}
-        {record.host}
-    {/if}
-    (ttl={record.record.ttl})
+    {#each Object.entries(answer.rdata) as [ty, data] (data)}
+        {#if data.txt_data}
+            {ty}: {new TextDecoder().decode(new Uint8Array(data.txt_data[0]))}
+        {:else}
+            {ty}: {data}
+        {/if}
+    {/each}
+    (ttl={answer.ttl})
 </p>
