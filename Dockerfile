@@ -11,7 +11,7 @@ RUN yarn build
 
 FROM rust:1.67-alpine as server
 
-RUN apk add musl-dev pkgconfig git clang mold
+RUN apk add musl-dev pkgconfig git clang mold openssl-dev
 RUN rustup set profile minimal
 RUN rustup default nightly
 
