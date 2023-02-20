@@ -1,4 +1,4 @@
-FROM node:19.5.0-buster-slim as client
+FROM node:19.5.0-bullseye-slim as client
 
 WORKDIR /client
 
@@ -9,9 +9,10 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1.67-alpine as server
+FROM rust:1-slim-bookworm as server
 
-RUN apk add musl-dev pkgconfig git clang mold openssl-dev
+RUN apt update -y
+RUN apt install -y clang libssl-dev mold pkg-config
 RUN rustup set profile minimal
 RUN rustup default nightly
 
@@ -40,7 +41,7 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM denoland/deno:debian-1.30.0
+FROM denoland/deno:debian-1.30.3
 
 RUN apt update && apt install -y dnsutils ca-certificates
 
