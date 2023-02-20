@@ -1,13 +1,12 @@
-type RR = { domain: string; query_type: number; class: number; ttl: number; data_length: number };
+type RData = Map<string, string> | Map<string, { txt_data: number[] }>;
 
-type MX = { MX: { record: RR; priority: number } };
-type TXT = { TXT: { record: RR; data: string } };
-type A = { A: { record: RR; addr: string } };
-type AAAA = { AAAA: { record: RR; addr: string } };
-type NS = { NS: { record: RR; host: string } };
-type CNAME = { CNAME: { record: RR; host: string } };
-
-type Answer = MX | TXT | A | AAAA | NS | CNAME;
+interface Answer {
+    dns_class: string;
+    name_labels: string;
+    rdata: RData;
+    rr_type: string;
+    ttl: number;
+}
 
 type Rule = {
     action: unknown;
@@ -16,14 +15,14 @@ type Rule = {
 };
 
 interface Request {
-    client: string;
     answers: Answer[];
-    question: { name: string; qtype: string };
-    status: string;
-    elapsed: number;
-    timestamp: number;
     cached: boolean;
+    client: string;
+    elapsed: number;
+    question: string;
     rule: Rule | null;
+    status: string;
+    timestamp: string;
 }
 
 type Requests = Request[];
@@ -45,4 +44,4 @@ interface Config {
     upstream: { ip: string; port: number }[];
 }
 
-export type { Answer, Request, Requests, Cache, Average, Config };
+export type { Answer, Average, Cache, Config, Request, Requests };

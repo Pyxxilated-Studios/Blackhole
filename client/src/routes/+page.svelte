@@ -1,6 +1,6 @@
 <script lang="ts">
     import Chart from "svelte-frappe-charts";
-    import type { Average, Cache, Requests } from "src/types";
+    import type { Average, Cache, Requests } from "../types";
     import { onMount } from "svelte";
 
     import { getNotificationsContext } from "svelte-notifications";
@@ -97,7 +97,7 @@
                 blockedRequestCount = 0;
 
                 requests.forEach((request) => {
-                    data[request.question.qtype] = (data[request.question.qtype] ?? 0) + 1;
+                    data[request.answers[0].rr_type] = (data[request.answers[0].rr_type] ?? 0) + 1;
 
                     let time = new Date(
                         ~~(new Date(request.timestamp).getTime() / TIME_SERIES) * TIME_SERIES

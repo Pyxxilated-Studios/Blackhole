@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Request } from "src/types";
+    import type { Request } from "../../types";
     import Record from "./Record.svelte";
 
     export let request: Request;
@@ -24,21 +24,16 @@
 <td class={`${ruleClass} text-xs md:text-sm`}>
     <div tabindex="-1" class="collapse">
         <div class="collapse-title">
-            <span>{request.question.name}</span>
-            <span class="text-accent">
-                {request.question.qtype}
-            </span>
+            <span>{request.question}</span>
             {#if request.cached}
-                (Cached)
+                <span class="text-accent">(Cached)</span>
             {/if}
         </div>
         <div class="collapse-content text-accent">
             <p>{request.status}</p>
             <p>Elapsed: {(request.elapsed / 1000000).toFixed(3)} ms</p>
-            {#each Array.from(request.answers) as answer}
-                {#each Object.entries(answer) as [ty, record]}
-                    <Record {ty} {record} />
-                {/each}
+            {#each request.answers as answer}
+                <Record {answer} />
             {/each}
         </div>
     </div>

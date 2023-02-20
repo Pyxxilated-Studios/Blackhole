@@ -1,7 +1,7 @@
 <script lang="ts">
     import Request from "./Request.svelte";
 
-    import type { Requests } from "src/types";
+    import type { Requests } from "../../types";
     import { onMount } from "svelte";
 
     import { inview } from "svelte-inview";
@@ -28,7 +28,6 @@
                         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                     )
                 );
-                shownRequests = requests.slice(0, count);
             } else {
                 addNotification({
                     type: "error",
