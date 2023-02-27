@@ -44,6 +44,7 @@ fn config() -> BoxedFilter<(impl Reply,)> {
 }
 
 impl Server {
+    #[no_coverage]
     pub async fn run(self) {
         let api = warp::path("api").and(statistics().or(config()));
 
@@ -108,7 +109,10 @@ mod test {
     use tokio::sync::Mutex;
     use warp::hyper::header::CONTENT_TYPE;
 
-    use crate::statistics::{Statistic, Statistics};
+    use crate::{
+        config::Config,
+        statistics::{Statistic, Statistics},
+    };
 
     static WORKER: LazyLock<Mutex<bool>> = LazyLock::new(Mutex::default);
 
@@ -201,6 +205,66 @@ mod test {
             serde_json::json!({ "Requests": [request] })
                 .to_string()
                 .as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn config() {
+        let filter = super::config();
+
+        let worker = WORKER.lock().await;
+
+        let _ = Config::set(|config| config.port = 10).await;
+        let config = Config::get(|config| config.clone()).await;
+
+        let response = warp::test::request().path("/config").reply(&filter).await;
+
+        drop(worker);
+
+        assert_eq!(response.status(), 200);
+        assert!(response.headers().contains_key(CONTENT_TYPE));
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            response.body(),
+            serde_json::json!(config).to_string().as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn update_config() {
+        let filter = super::config();
+
+        let worker = WORKER.lock().await;
+
+        *crate::config::CONFIG_FILE.write().await = Some(String::from("config.toml"));
+        let mut config = Config::get(|config| config.clone()).await;
+        config.port = 100;
+
+        let response = warp::test::request()
+            .path("/config")
+            .method("POST")
+            .json(&config)
+            .reply(&filter)
+            .await;
+
+        assert_eq!(response.status(), 200);
+
+        let response = warp::test::request().path("/config").reply(&filter).await;
+
+        drop(worker);
+
+        assert_eq!(response.status(), 200);
+        assert!(response.headers().contains_key(CONTENT_TYPE));
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            response.body(),
+            serde_json::json!(config).to_string().as_str()
         );
     }
 }

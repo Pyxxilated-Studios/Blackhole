@@ -12,7 +12,7 @@ use regex::Regex;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
+use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock, task::JoinError};
 use tracing::{error, info, instrument};
 use trust_dns_server::server::Request;
 
@@ -104,7 +104,7 @@ impl Filter {
             .collect::<Vec<_>>();
 
         for task in tasks {
-            let _ = tokio::join!(task).0;
+            let _: Result<(), JoinError> = tokio::join!(task).0;
         }
     }
 

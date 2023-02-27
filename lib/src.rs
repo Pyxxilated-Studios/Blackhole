@@ -4,6 +4,7 @@
     array_try_from_fn,
     async_fn_in_trait,
     ip,
+    no_coverage,
     once_cell,
     option_get_or_insert_default
 )]
@@ -39,6 +40,7 @@ pub mod statistics;
 /// # Errors
 /// If there are issues during startup
 ///
+#[no_coverage]
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
     let port = config::Config::get(|config| config.port).await;
 
