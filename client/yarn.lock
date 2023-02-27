@@ -1818,9 +1818,9 @@ svelte-hmr@^0.15.1:
   integrity sha512-BiKB4RZ8YSwRKCNVdNxK/GfY+r4Kjgp9jCLEy0DuqAKfmQtpL38cQK3afdpjw4sqSs4PLi3jIPJIFp259NkZtA==
 
 svelte-inview@^3:
-  version "3.0.2"
-  resolved "https://registry.yarnpkg.com/svelte-inview/-/svelte-inview-3.0.2.tgz#6421a3cb8fd2dafb5a1019de74efbd5f27e1f57b"
-  integrity sha512-QdMGe8oE/dsoqbQHppeNgz9zK0Ahir+RYDqw5JwKJcbdzLOkgPGp0Dzt8c9PIdEQXoJD+piOeMGdQGrCmlyMag==
+  version "3.0.4"
+  resolved "https://registry.yarnpkg.com/svelte-inview/-/svelte-inview-3.0.4.tgz#92eabc783ad51c00ca283bf017cc1f2d61502fdf"
+  integrity sha512-dJZMZ7qN+z2lsxHA7mK1vS35qOCfl1BNSs712a2AnulbRm371n2eoaNa5ICVYAViWpj2zCy1XGZllrxJ0Tjp5A==
 
 svelte-notifications@^0.9.98:
   version "0.9.98"
