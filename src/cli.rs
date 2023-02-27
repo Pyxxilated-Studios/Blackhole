@@ -27,6 +27,7 @@ pub struct Cli {
 
 impl Load for Cli {
     #[allow(clippy::unused_async)]
+    #[no_coverage]
     async fn load(&self, config: &mut blackhole::config::Config) -> Result<(), Error> {
         config.upstreams.extend(self.upstreams.clone());
         if let Some(port) = self.port {

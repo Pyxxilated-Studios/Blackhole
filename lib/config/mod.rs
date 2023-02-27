@@ -13,7 +13,7 @@ use tracing::{error, info, instrument};
 use crate::{dns::server::Upstream, filter::List, schedule::Schedule};
 
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
-static CONFIG_FILE: LazyLock<RwLock<String>> = LazyLock::new(RwLock::default);
+pub(crate) static CONFIG_FILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(RwLock::default);
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -29,6 +29,10 @@ pub enum Error {
 
 const fn default_port() -> u16 {
     53
+}
+
+fn default_path() -> String {
+    String::from("/config/config.toml")
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
@@ -67,7 +71,7 @@ impl Load for PathBuf {
     #[instrument(level = "info", err, skip(self, config), fields(file = self.to_str()))]
     async fn load(&self, config: &mut Config) -> Result<(), Error> {
         info!("Loading config");
-        *CONFIG_FILE.write().await = self.to_string_lossy().to_string();
+        *CONFIG_FILE.write().await = Some(self.to_string_lossy().to_string());
 
         let conf = std::fs::read_to_string(self)?;
         let conf: Config = toml::from_str(&conf)?;
@@ -107,10 +111,18 @@ impl Config {
     ///  - The config file is not writable
     ///
     pub async fn save() -> Result<(), Error> {
-        Ok(std::fs::write(
-            Path::new(&*CONFIG_FILE.read().await),
+        std::fs::write(
+            Path::new(
+                &*CONFIG_FILE
+                    .read()
+                    .await
+                    .as_ref()
+                    .map_or_else(default_path, Clone::clone),
+            ),
             toml::to_string(&*CONFIG.read().await)?,
-        )?)
+        )?;
+
+        Ok(())
     }
 
     ///
