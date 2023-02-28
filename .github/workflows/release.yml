@@ -20,10 +20,6 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        file: [Dockerfile, Dockerfile.alpine, Dockerfile.distroless]
-
     permissions:
       contents: read
       packages: write
@@ -43,38 +39,67 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get Prefix
-        id: prefix
-        run: |
-          FILE=${{ matrix.file }}
-          PREFIX=${FILE##*.}
-          if [ ${PREFIX} = "Dockerfile" ]
-          then
-              PREFIX=""
-          else
-              PREFIX="${PREFIX}-"
-          fi
-          echo "PREFIX=$PREFIX" >> $GITHUB_OUTPUT
-
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v4.3.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          flavor: |
-            prefix=${{ steps.prefix.outputs.PREFIX }},onlatest=true
           tags: |
             type=ref,event=tag,
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker Image
         uses: docker/build-push-action@v4.0.0
         with:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          file: Dockerfile
+
+      - name: Extract metadata (tags, labels) for Alpine Image
+        id: meta-alpine
+        uses: docker/metadata-action@v4.3.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            prefix=alpine
+          tags: |
+            type=ref,event=tag,
+            type=semver,pattern={{version}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4.0.0
+        with:
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-alpine.outputs.tags }}
+          labels: ${{ steps.meta-alpine.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          file: Dockerfile.alpine
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata (tags, labels) for Distroless Image
+        id: meta-distroless
+        uses: docker/metadata-action@v4.3.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            prefix=distroless
+          tags: |
+            type=ref,event=tag,
+            type=semver,pattern={{version}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4.0.0
+        with:
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-distroless.outputs.tags }}
+          labels: ${{ steps.meta-distroless.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
-          file: ${{ matrix.file }}
+          file: Dockerfile.distroless
