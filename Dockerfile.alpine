@@ -9,10 +9,9 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1-slim-bookworm as server
+FROM rust:1-alpine as server
 
-RUN apt update -y
-RUN apt install -y clang libssl-dev mold pkg-config
+RUN apk add musl-dev pkgconfig git clang mold
 RUN rustup set profile minimal
 RUN rustup default nightly
 
