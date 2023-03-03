@@ -25,7 +25,7 @@
                 const json = await resp.json();
                 requests = Array.from(
                     ((json.Requests ?? []) as Requests).sort(
-                        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                        (a, b) => b.timestamp.secs_since_epoch - a.timestamp.secs_since_epoch
                     )
                 );
             } else {
