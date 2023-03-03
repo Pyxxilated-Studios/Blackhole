@@ -1,15 +1,15 @@
+#[cfg(debug_assertions)]
+use std::fmt::Debug;
+
 use std::{
-    fmt::Debug,
     hash::BuildHasherDefault,
     sync::{LazyLock, RwLock},
+    time::SystemTime,
 };
 
-use chrono::{DateTime, Utc};
-use const_format::concatcp;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use tracing::{field::Visit, instrument, trace, Subscriber};
-use tracing_subscriber::{registry::LookupSpan, Layer};
+use tracing::{instrument, trace};
 use trust_dns_proto::rr::Record;
 
 use crate::filter::rules::Rule;
@@ -19,9 +19,6 @@ static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default)
 pub const REQUESTS: &str = "requests";
 pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
-
-pub(crate) const STATISTICS_PREFIX: &str = "statistics";
-pub(crate) const REQUESTS_PREFIX: &str = concatcp!(STATISTICS_PREFIX, "_", REQUESTS);
 
 impl Statistic {
     fn record(self, stats: &mut FxHashMap<&'static str, Statistic>) {
@@ -78,12 +75,14 @@ impl Statistic {
     }
 }
 
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
 #[derive(Serialize, Clone, Default)]
 pub struct Average {
     pub count: usize,
     pub average: usize,
 }
 
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
 #[derive(Serialize, Clone, Default)]
 pub struct Cache {
     pub size: usize,
@@ -91,7 +90,7 @@ pub struct Cache {
     pub misses: usize,
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq))]
 #[derive(Serialize, Clone, Deserialize)]
 pub struct Request {
     pub client: String,
@@ -100,10 +99,11 @@ pub struct Request {
     pub rule: Option<Rule>,
     pub status: String,
     pub elapsed: usize,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: SystemTime,
     pub cached: bool,
 }
 
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
 #[derive(Serialize, Clone)]
 pub enum Statistic {
     Count(usize),
@@ -113,48 +113,8 @@ pub enum Statistic {
     Cache(Cache),
 }
 
-struct StatisticsVisitor;
-
-impl Visit for StatisticsVisitor {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name().starts_with(REQUESTS_PREFIX) {
-            #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-            #[derive(Deserialize)]
-            struct Request {
-                request: crate::statistics::Request,
-            }
-
-            if let Ok(Request { request }) = serde_json::from_str::<Request>(value) {
-                Statistics::record(crate::statistics::Statistic::Average(
-                    crate::statistics::Average {
-                        count: 1,
-                        average: request.elapsed,
-                    },
-                ));
-                Statistics::record(crate::statistics::Statistic::Request(request));
-            }
-        }
-    }
-
-    fn record_debug(&mut self, _field: &tracing::field::Field, _value: &dyn std::fmt::Debug) {}
-}
-
 pub struct Statistics {
     statistics: FxHashMap<&'static str, Statistic>,
-}
-
-impl<S> Layer<S> for Statistics
-where
-    S: Subscriber + for<'span> LookupSpan<'span> + Debug,
-{
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        let mut visitor = StatisticsVisitor;
-        event.record(&mut visitor);
-    }
 }
 
 impl Default for Statistics {

@@ -14,8 +14,6 @@ use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
-use blackhole::statistics::Statistics;
-
 mod cli;
 
 #[no_coverage]
@@ -34,7 +32,6 @@ fn enable_tracing() {
     };
 
     tracing_subscriber::Registry::default()
-        .with(Statistics::default())
         .with(
             (if cfg!(debug_assertions) {
                 tracing_subscriber::fmt::layer()

@@ -1,9 +1,8 @@
 use std::{
     sync::LazyLock,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
-use chrono::Utc;
 use futures::future::select_all;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -32,23 +31,23 @@ impl Sched {
                 Filter::reset().await;
             }
             Sched::Logs => {
-                let cutoff = Utc::now()
-                    - chrono::Duration::from_std(
-                        Config::get(|config| {
-                            config
-                                .schedules
-                                .iter()
-                                .find(|sched| sched.name == Sched::Logs)
-                                .map(|sched| sched.schedule)
-                        })
-                        .await
-                        .unwrap_or(Duration::from_secs(60 * 60 * 6)),
-                    )
-                    .unwrap();
+                let cutoff = SystemTime::now()
+                    - Config::get(|config| {
+                        config
+                            .schedules
+                            .iter()
+                            .find(|sched| sched.name == Sched::Logs)
+                            .map(|sched| sched.schedule)
+                    })
+                    .await
+                    .unwrap_or(Duration::from_secs(60 * 60 * 6));
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {
-                        requests.retain(|request| request.timestamp > cutoff);
+                        requests.retain(|request| match request.timestamp.duration_since(cutoff) {
+                            Ok(diff) => diff.is_zero(),
+                            Err(_) => true,
+                        });
                     }
                 });
             }
@@ -65,6 +64,7 @@ impl Sched {
     }
 }
 
+#[cfg_attr(any(debug_assertions, test), derive(PartialEq))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Schedule {
     pub name: Sched,
