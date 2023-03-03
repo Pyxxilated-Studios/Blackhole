@@ -100,7 +100,8 @@
                     data[request.answers[0].rr_type] = (data[request.answers[0].rr_type] ?? 0) + 1;
 
                     let time = new Date(
-                        ~~(new Date(request.timestamp).getTime() / TIME_SERIES) * TIME_SERIES
+                        ~~(new Date(request.timestamp.secs_since_epoch).getTime() / TIME_SERIES) *
+                            TIME_SERIES
                     ).toLocaleString();
 
                     if (request.rule?.ty === "Deny") {

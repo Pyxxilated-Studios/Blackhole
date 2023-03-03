@@ -22,7 +22,10 @@ interface Request {
     question: string;
     rule: Rule | null;
     status: string;
-    timestamp: string;
+    timestamp: {
+        secs_since_epoch: number;
+        nanos_since_epoch: number;
+    };
 }
 
 type Requests = Request[];
