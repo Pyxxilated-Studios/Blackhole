@@ -1,9 +1,11 @@
-use std::{net::IpAddr, str::FromStr, time::Instant};
+use std::{
+    net::IpAddr,
+    str::FromStr,
+    time::{Instant, SystemTime},
+};
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use tracing::{error, trace};
+use tracing::error;
 use trust_dns_proto::{
     op::{Message, MessageType, ResponseCode},
     rr::Record,
@@ -28,7 +30,7 @@ use crate::{
     cache::Cache,
     config::Config,
     filter::{rules::Rule, Filter},
-    statistics,
+    statistics::{self, Statistics},
 };
 
 fn default_port() -> u16 {
@@ -192,7 +194,7 @@ impl RequestHandler for Server {
         stat.elapsed(timer.elapsed().as_nanos() as usize)
             .code(response.response_code().to_string());
 
-        trace!(statistics_requests = json!({ "request": stat }).to_string(),);
+        Statistics::record(crate::statistics::Statistic::Request(stat));
 
         response
     }
@@ -244,7 +246,7 @@ impl Default for statistics::Request {
             rule: Option::default(),
             status: String::default(),
             elapsed: 0,
-            timestamp: Utc::now(),
+            timestamp: SystemTime::now(),
             cached: false,
         }
     }

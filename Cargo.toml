@@ -24,10 +24,6 @@ harness = false
 [dependencies]
 async-trait = "0.1"
 bstr = { version = "1", default-features = false, features = ["alloc"] }
-chrono = { version = "0.4", default-features = false, features = [
-    "clock",
-    "serde",
-] }
 clap = { version = "4", default-features = false, features = [
     "derive",
     "help",
@@ -38,12 +34,10 @@ const_format = "0.2"
 futures = "0.3"
 humantime-serde = "1"
 nom = "7"
-num-traits = { version = "0.2", default-features = false }
 rayon = "1"
 regex = "1"
 rustc-hash = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
-serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", default-features = false, features = [
     "net",
@@ -51,7 +45,6 @@ tokio = { version = "1", default-features = false, features = [
     "parking_lot",
     "rt-multi-thread",
     "signal",
-    "time",
     "tracing",
 ] }
 toml = "0.7.2"
@@ -70,11 +63,13 @@ trust-dns-proto = { version = "0.22", default-features = false, features = [
     "dns-over-https-rustls",
     "dns-over-rustls",
     "dnssec-ring",
+    "serde-config",
 ] }
 trust-dns-resolver = { version = "0.22", default-features = false, features = [
     "dns-over-https-rustls",
     "dns-over-rustls",
     "dnssec-ring",
+    "serde-config",
 ] }
 trust-dns-server = { version = "0.22", default-features = false, features = [
     "dns-over-https-rustls",
@@ -95,6 +90,7 @@ criterion = { version = "0.4", default-features = false, features = [
     "real_blackbox",
 ] }
 pretty_assertions = "1"
+serde_json = "1"
 
 [profile.release]
 lto = true

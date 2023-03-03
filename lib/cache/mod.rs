@@ -1,8 +1,7 @@
 use core::mem::size_of;
-use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
+use std::{hash::BuildHasherDefault, time::Duration, time::Instant};
 
-use chrono::{DateTime, Duration, Utc};
 use rustc_hash::FxHashMap;
 use tokio::sync::RwLock;
 use trust_dns_proto::{rr::RecordType, xfer::DnsResponse};
@@ -10,7 +9,7 @@ use trust_dns_server::server::Request;
 
 use crate::statistics::{self, Statistic, Statistics};
 
-type PacketExpires = (DnsResponse, Vec<DateTime<Utc>>);
+type PacketExpires = (DnsResponse, Vec<Instant>);
 type Entry = FxHashMap<RecordType, PacketExpires>;
 
 pub struct Cache {
@@ -43,7 +42,7 @@ impl Cache {
             .get(&request.query().original().name().to_string())
             .and_then(|entry| entry.get(&request.query().query_type()));
 
-        let now = Utc::now();
+        let now = Instant::now();
 
         response
             .cloned()
@@ -61,8 +60,7 @@ impl Cache {
                         .zip(expires.into_iter())
                         .for_each(|(answer, expire)| {
                             answer.set_ttl(
-                                u32::try_from((expire - now).num_seconds())
-                                    .expect("Invalid expiry"),
+                                u32::try_from((expire - now).as_secs()).expect("Invalid expiry"),
                             );
                         });
 
@@ -95,7 +93,7 @@ impl Cache {
         let value: Vec<_> = response
             .answers()
             .iter()
-            .map(|answer| Utc::now() + Duration::seconds(i64::from(answer.ttl())))
+            .map(|answer| Instant::now() + Duration::from_secs(answer.ttl().into()))
             .collect();
 
         *cache

@@ -1,10 +1,10 @@
 use std::{collections::HashMap, net::Ipv6Addr};
 
-use serde_json::json;
+use serde::Serialize;
 use tracing::error;
 use warp::{
     body::BodyDeserializeError, filters::BoxedFilter, http::Response, hyper::header::CONTENT_TYPE,
-    Filter, Rejection, Reply,
+    reply::json, Filter, Rejection, Reply,
 };
 
 use crate::{config::Config, statistics::Statistics};
@@ -32,10 +32,18 @@ fn config() -> BoxedFilter<(impl Reply,)> {
             .and(warp::body::json())
             .and_then(Server::update_config)
             .recover(|err: Rejection| async {
+                #[derive(Serialize)]
+                struct Error {
+                    reason: String,
+                }
+
                 if let Some(err) = err.find::<BodyDeserializeError>() {
-                    Ok(Response::builder()
-                        .status(400)
-                        .body(json!({ "reason": err.to_string() }).to_string()))
+                    Ok(Box::new(
+                        json(&Error {
+                            reason: err.to_string(),
+                        })
+                        .into_response(),
+                    ))
                 } else {
                     Err(err)
                 }
@@ -52,11 +60,7 @@ impl Server {
     }
 
     fn all() -> Box<(dyn warp::Reply + 'static)> {
-        Box::new(
-            Response::builder()
-                .header(CONTENT_TYPE, "application/json")
-                .body(json!(Statistics::statistics()).to_string()),
-        )
+        Box::new(json(&Statistics::statistics()).into_response())
     }
 
     fn statistics(
@@ -67,11 +71,7 @@ impl Server {
         let to = params.get("to");
 
         match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to) {
-            Some(statistics) => Box::new(
-                Response::builder()
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(json!(statistics).to_string()),
-            ),
+            Some(statistics) => Box::new(json(&statistics).into_response()),
             None => Box::new(
                 Response::builder()
                     .header(CONTENT_TYPE, "application/json")
@@ -83,11 +83,7 @@ impl Server {
     async fn config() -> Result<Box<dyn warp::Reply>, warp::Rejection> {
         let config = Config::get(Clone::clone).await;
 
-        Ok(Box::new(
-            Response::builder()
-                .header(CONTENT_TYPE, "application/json")
-                .body(json!(config).to_string()),
-        ))
+        Ok(Box::new(json(&config).into_response()))
     }
 
     async fn update_config(body: Config) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
@@ -106,12 +102,13 @@ mod test {
     use std::sync::LazyLock;
 
     use pretty_assertions::assert_eq;
+    use rustc_hash::FxHashMap;
     use tokio::sync::Mutex;
     use warp::hyper::header::CONTENT_TYPE;
 
     use crate::{
         config::Config,
-        statistics::{Statistic, Statistics},
+        statistics::{Statistic, Statistics, REQUESTS},
     };
 
     static WORKER: LazyLock<Mutex<bool>> = LazyLock::new(Mutex::default);
@@ -164,11 +161,12 @@ mod test {
             response.headers().get(CONTENT_TYPE).unwrap(),
             "application/json"
         );
+
+        let body = String::from_utf8(response.body().to_vec());
+        let body = body.unwrap();
         assert_eq!(
-            response.body(),
-            serde_json::json!(Statistics::statistics())
-                .to_string()
-                .as_str()
+            serde_json::from_str::<FxHashMap<&str, Statistic>>(&body).unwrap(),
+            Statistics::statistics()
         );
 
         Statistics::clear();
@@ -191,21 +189,22 @@ mod test {
             .reply(&filter)
             .await;
 
-        Statistics::clear();
-        drop(worker);
-
         assert_eq!(response.status(), 200);
         assert!(response.headers().contains_key(CONTENT_TYPE));
         assert_eq!(
             response.headers().get(CONTENT_TYPE).unwrap(),
             "application/json"
         );
+
+        let body = String::from_utf8(response.body().to_vec());
+        let body = body.unwrap();
         assert_eq!(
-            response.body(),
-            serde_json::json!({ "Requests": [request] })
-                .to_string()
-                .as_str()
+            serde_json::from_str::<Statistic>(&body).unwrap(),
+            Statistics::retrieve(REQUESTS, None, None).unwrap()
         );
+
+        Statistics::clear();
+        drop(worker);
     }
 
     #[tokio::test]
@@ -227,10 +226,10 @@ mod test {
             response.headers().get(CONTENT_TYPE).unwrap(),
             "application/json"
         );
-        assert_eq!(
-            response.body(),
-            serde_json::json!(config).to_string().as_str()
-        );
+
+        let body = String::from_utf8(response.body().to_vec());
+        let body = body.unwrap();
+        assert_eq!(serde_json::from_str::<Config>(&body).unwrap(), config);
     }
 
     #[tokio::test]
@@ -262,9 +261,9 @@ mod test {
             response.headers().get(CONTENT_TYPE).unwrap(),
             "application/json"
         );
-        assert_eq!(
-            response.body(),
-            serde_json::json!(config).to_string().as_str()
-        );
+
+        let body = String::from_utf8(response.body().to_vec());
+        let body = body.unwrap();
+        assert_eq!(serde_json::from_str::<Config>(&body).unwrap(), config);
     }
 }

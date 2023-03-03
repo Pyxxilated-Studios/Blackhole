@@ -35,7 +35,7 @@ fn default_path() -> String {
     String::from("/config/config.toml")
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq))]
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(default = "default_port")]
@@ -119,7 +119,7 @@ impl Config {
                     .as_ref()
                     .map_or_else(default_path, Clone::clone),
             ),
-            toml::to_string(&*CONFIG.read().await)?,
+            toml::to_string_pretty(&*CONFIG.read().await)?,
         )?;
 
         Ok(())
