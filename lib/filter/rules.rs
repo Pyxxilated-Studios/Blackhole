@@ -2,19 +2,12 @@ use std::{
     io::{BufRead, BufReader},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
-    str::FromStr,
 };
 
-use bstr::BString;
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_while1},
-    character::complete::{line_ending, not_line_ending, one_of, space0, space1},
-    combinator::{eof, map, opt, peek},
-    error::{context, ContextError, ParseError, VerboseError},
-    multi::{count, many_m_n, many_till, separated_list1},
-    sequence::{pair, terminated, tuple},
-    IResult,
+use chumsky::{
+    extra,
+    primitive::{any, choice, just, one_of},
+    text, IterParser, Parser,
 };
 use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
 use rustc_hash::FxHashMap;
@@ -27,6 +20,8 @@ use trust_dns_proto::{
 use trust_dns_server::server::Request;
 
 use super::Error;
+
+const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Clone, Serialize, PartialEq, PartialOrd, Deserialize)]
@@ -143,33 +138,127 @@ impl Rule {
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default, Clone, PartialEq)]
 pub struct Rules {
-    pub(crate) children: FxHashMap<BString, Rules>,
+    pub(crate) children: FxHashMap<Vec<u8>, Rules>,
     pub(crate) rule: Option<Rule>,
 }
 
+#[cfg(debug_assertions)]
+type ParserResult<'a> =
+    impl Parser<'a, &'a str, Vec<Type>, extra::Err<chumsky::prelude::Rich<'a, &'a str>>>;
+
+#[cfg(not(debug_assertions))]
+type ParserResult<'a> = impl Parser<'a, &'a str, Vec<Type>, extra::Err<chumsky::prelude::EmptyErr>>;
+
 impl Rules {
-    fn lex<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        i: &'a str,
-    ) -> IResult<&'a str, impl Iterator<Item = Option<Type>> + 'a, E> {
-        context(
-            "Lex",
-            map(
-                many_till(
-                    tuple((
-                        space0,
-                        opt(alt((
-                            hosts,
-                            map(ip, Type::Ip),
-                            map(domain, Type::Domain),
-                            adblock,
-                        ))),
-                        eol,
-                    )),
-                    eof,
-                ),
-                |(a, _)| a.into_iter().map(|(_, b, _)| b),
-            ),
-        )(i)
+    fn parser<'a>() -> ParserResult<'a> {
+        let ipv4 = choice((
+            just('1').then(text::digits(10).exactly(2)).slice(),
+            just('2')
+                .then(just('5').then(text::digits(6).exactly(1)))
+                .slice(),
+            just('2')
+                .then(text::digits(5).exactly(1))
+                .then(text::digits(10).exactly(1))
+                .slice(),
+            text::digits(10).at_least(1).at_most(2).slice(),
+        ))
+        .separated_by(just('.'))
+        .exactly(4)
+        .slice();
+
+        let h16 = text::digits(16).at_least(1).at_most(4).slice();
+        let ls32 = choice((h16.then(just(':')).then(h16).slice(), ipv4));
+
+        let ipv6 = choice((
+            // [ *6( h16 ":" ) h16 ] "::" h16
+            // [ *5( h16 ":" ) h16 ] "::" h16
+            (h16.then(just(':')).repeated().at_most(6).then(h16))
+                .or_not()
+                .then(just("::"))
+                .then(h16)
+                .slice(),
+            // [ *4( h16 ":" ) h16 ] "::" ls32
+            (h16.then(just(':')).repeated().at_most(4).then(h16))
+                .or_not()
+                .then(just("::"))
+                .then(ls32)
+                .slice(),
+            // [ *3( h16 ":" ) h16 ] "::" h16 ":" ls32
+            (h16.then(just(':')).repeated().at_most(3).then(h16))
+                .or_not()
+                .then(just("::"))
+                .then(h16)
+                .then(just(':'))
+                .then(ls32)
+                .slice(),
+            // [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+            (h16.then(just(':')).repeated().at_most(2).then(h16))
+                .or_not()
+                .then(just("::"))
+                .then(h16.then(just(':')).repeated_exactly::<2>())
+                .then(ls32)
+                .slice(),
+            // [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+            ((h16.then(just(':'))).or_not().then(h16))
+                .or_not()
+                .then(just("::"))
+                .then(h16.then(just(':')).repeated_exactly::<3>())
+                .then(ls32)
+                .slice(),
+            // [ h16 ] "::" 4( h16 ":" ) ls32
+            h16.or_not()
+                .then(just("::"))
+                .then(h16.then(just(':')).repeated_exactly::<4>())
+                .then(ls32)
+                .slice(),
+            // "::" 5( h16 ":" ) ls32
+            just("::")
+                .then(h16.then(just(':')).repeated_exactly::<5>())
+                .then(ls32)
+                .slice(),
+            // 6( h16 ":" ) ls32
+            h16.then(just(':'))
+                .repeated_exactly::<6>()
+                .then(ls32)
+                .slice(),
+        ));
+
+        let ip = choice((ipv4, ipv6)).from_str::<IpAddr>().unwrapped();
+
+        let domain = one_of(DOMAIN_CHARS)
+            .repeated()
+            .at_least(1)
+            .slice()
+            .separated_by(just('.'))
+            .at_least(1)
+            .collect::<Vec<_>>()
+            .map(|a| a.join("."));
+
+        let hosts = ip
+            .then_ignore(text::inline_whitespace())
+            .then(domain)
+            .map(|(ip, domain)| Type::Host(ip, domain));
+
+        let adblock = choice((just("@@||"), just("||@@"), just("||")))
+            .then(choice((ip.map(Type::Ip), domain.map(Type::Domain))))
+            .map(|(kind, ty)| {
+                Type::Adblock(
+                    if kind.chars().any(|c| c == '@') {
+                        Kind::Deny
+                    } else {
+                        Kind::Allow
+                    },
+                    Box::new(ty),
+                )
+            });
+
+        let comment = one_of("#!").then(any().and_is(text::newline().not()).repeated());
+
+        choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock))
+            .padded_by(comment.repeated())
+            .padded()
+            .repeated()
+            .collect()
     }
 
     ///
@@ -188,19 +277,22 @@ impl Rules {
             .par_bridge()
             .try_fold(
                 || Vec::with_capacity(1024 * 8),
-                |mut entries, line| match Self::lex::<VerboseError<&str>>(&line) {
-                    Err(err) => Err(Error::FilterError(format!("Invalid filter list: {err}"))),
-                    Ok((_, ents)) => {
-                        entries.extend(ents.flatten());
-                        Ok(entries)
+                |mut rules, line| {
+                    let (rules_, errors) = Self::parser().parse(&line).into_output_errors();
+                    if errors.is_empty() {
+                        rules.extend(rules_.into_iter().flatten());
+                        Ok(rules)
+                    } else {
+                        println!("{errors:#?}");
+                        Err(Error::FilterError(String::from("Invalid filter list")))
                     }
                 },
             )
             .try_reduce(
                 || Vec::with_capacity(1024 * 64),
-                |mut entries, entry| {
-                    entries.extend(entry);
-                    Ok(entries)
+                |mut rules, rules_| {
+                    rules.extend(rules_);
+                    Ok(rules)
                 },
             )
     }
@@ -286,343 +378,4 @@ impl TryFrom<&mut super::List> for Rules {
 
         Ok(rules)
     }
-}
-
-const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
-
-fn ip4_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IP4_Num",
-        alt((
-            map(
-                tuple((tag("1"), one_of("0123456789"), one_of("0123456789"))),
-                |(a, b, c)| format!("{a}{b}{c}"),
-            ),
-            map(
-                tuple((
-                    tag("2"),
-                    alt((
-                        map(tuple((tag("5"), one_of("012345"))), |(a, b)| {
-                            format!("{a}{b}")
-                        }),
-                        map(tuple((one_of("01234"), one_of("0123456789"))), |(a, b)| {
-                            format!("{a}{b}")
-                        }),
-                    )),
-                )),
-                |(_, b)| format!("2{b}"),
-            ),
-            map(
-                tuple((one_of("123456789"), one_of("0123456789"))),
-                |(a, b)| format!("{a}{b}"),
-            ),
-            map(one_of("0123456789"), |a| format!("{a}")),
-        )),
-    )(i)
-}
-
-fn ipv4<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IPV4",
-        map(
-            tuple((count(terminated(ip4_num, tag(".")), 3), ip4_num)),
-            |(a, b)| format!("{}.{b}", a.join(".")),
-        ),
-    )(i)
-}
-
-fn ip6_num<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IP6_Num",
-        map(many_m_n(1, 4, one_of("0123456789abcdef")), |a| {
-            a.iter().collect()
-        }),
-    )(i)
-}
-
-fn ls32<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "ls32",
-        alt((
-            map(tuple((ip6_num, tag(":"), ip6_num)), |(a, b, c)| {
-                format!("{a}{b}{c}")
-            }),
-            ipv4,
-        )),
-    )(i)
-}
-
-#[allow(clippy::too_many_lines)]
-fn ipv6<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "IPV6",
-        alt((
-            map(
-                // [ *5( h16 ":" ) h16 ] "::" h16
-                tuple((
-                    opt(alt((
-                        map(
-                            pair(many_m_n(0, 5, pair(ip6_num, tag(":"))), ip6_num),
-                            |(a, b)| {
-                                format!(
-                                    "{}{b}",
-                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                                )
-                            },
-                        ),
-                        ip6_num,
-                    ))),
-                    tag("::"),
-                    ip6_num,
-                )),
-                |(a, b, c)| format!("{}{b}{c}", a.unwrap_or_default()),
-            ),
-            map(
-                // [ *6( h16 ":" ) h16 ] "::"
-                tuple((
-                    opt(alt((
-                        map(
-                            pair(many_m_n(0, 6, pair(ip6_num, tag(":"))), ip6_num),
-                            |(a, b)| {
-                                format!(
-                                    "{}{b}",
-                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                                )
-                            },
-                        ),
-                        ip6_num,
-                    ))),
-                    tag("::"),
-                )),
-                |(a, b)| format!("{}{b}", a.unwrap_or_default()),
-            ),
-            map(
-                // [ *4( h16 ":" ) h16 ] "::" ls32
-                tuple((
-                    opt(alt((
-                        map(
-                            pair(many_m_n(0, 4, pair(ip6_num, tag(":"))), ip6_num),
-                            |(a, b)| {
-                                format!(
-                                    "{}{b}",
-                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                                )
-                            },
-                        ),
-                        ip6_num,
-                    ))),
-                    tag("::"),
-                    ls32,
-                )),
-                |(a, b, c)| format!("{}{b}{c}", a.unwrap_or_default()),
-            ),
-            map(
-                // [ *3( h16 ":" ) h16 ] "::" h16 ":" ls32
-                tuple((
-                    opt(alt((
-                        map(
-                            pair(many_m_n(0, 3, pair(ip6_num, tag(":"))), ip6_num),
-                            |(a, b)| {
-                                format!(
-                                    "{}{b}",
-                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                                )
-                            },
-                        ),
-                        ip6_num,
-                    ))),
-                    tag("::"),
-                    ip6_num,
-                    tag(":"),
-                    ls32,
-                )),
-                |(a, b, c, d, e)| format!("{}{b}{c}{d}{e}", a.unwrap_or_default()),
-            ),
-            map(
-                // [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
-                tuple((
-                    opt(alt((
-                        map(
-                            pair(many_m_n(0, 2, pair(ip6_num, tag(":"))), ip6_num),
-                            |(a, b)| {
-                                format!(
-                                    "{}{b}",
-                                    a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                                )
-                            },
-                        ),
-                        ip6_num,
-                    ))),
-                    tag("::"),
-                    count(pair(ip6_num, tag(":")), 2),
-                    ls32,
-                )),
-                |(a, b, c, d)| {
-                    format!(
-                        "{}{b}{}{d}",
-                        a.unwrap_or_default(),
-                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                    )
-                },
-            ),
-            map(
-                // [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
-                tuple((
-                    opt(pair(opt(pair(ip6_num, tag(":"))), ip6_num)),
-                    tag("::"),
-                    count(pair(ip6_num, tag(":")), 3),
-                    ls32,
-                )),
-                |(a, b, c, d)| {
-                    format!(
-                        "{}{b}{}{d}",
-                        if let Some((a, b)) = a {
-                            format!(
-                                "{}{b}",
-                                a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                            )
-                        } else {
-                            String::default()
-                        },
-                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                    )
-                },
-            ),
-            map(
-                // [ h16 ] "::" 4( h16 ":" ) ls32
-                tuple((
-                    opt(ip6_num),
-                    tag("::"),
-                    count(pair(ip6_num, tag(":")), 4),
-                    ls32,
-                )),
-                |(a, b, c, d)| {
-                    format!(
-                        "{}{b}{}{d}",
-                        a.unwrap_or_default(),
-                        c.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                    )
-                },
-            ),
-            map(
-                // "::" 5( h16 ":" ) ls32
-                tuple((tag("::"), count(pair(ip6_num, tag(":")), 5), ls32)),
-                |(a, b, c)| {
-                    format!(
-                        "{a}{}{c}",
-                        b.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                    )
-                },
-            ),
-            map(
-                // 6( h16 ":" ) ls32
-                pair(count(pair(ip6_num, tag(":")), 6), ls32),
-                |(a, b)| {
-                    format!(
-                        "{}{b}",
-                        a.iter().map(|(a, b)| format!("{a}{b}")).collect::<String>()
-                    )
-                },
-            ),
-        )),
-    )(i)
-}
-
-///
-/// Parse an IP in accordance to the ABNF form described in
-/// [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
-///
-fn ip<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, IpAddr, E> {
-    context(
-        "IP",
-        map(
-            tuple((alt((ipv4, ipv6)), peek(alt((space1, eol, eof))))),
-            |(ip, _)| IpAddr::from_str(&ip).unwrap(),
-        ),
-    )(i)
-}
-
-fn domain<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, String, E> {
-    context(
-        "Domain",
-        map(
-            separated_list1(
-                tag("."),
-                take_while1(|c| DOMAIN_CHARS.chars().any(|a| a == c)),
-            ),
-            |parts| parts.join("."),
-        ),
-    )(i)
-}
-
-fn hosts<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, Type, E> {
-    context(
-        "Hosts",
-        map(tuple((ip, space1, domain)), |(ip, _, domain)| {
-            Type::Host(ip, domain)
-        }),
-    )(i)
-}
-
-fn adblock<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, Type, E> {
-    context(
-        "Adblock",
-        map(
-            tuple((
-                alt((tag("||@@"), tag("@@||"), tag("||"))),
-                alt((map(ip, Type::Ip), map(domain, Type::Domain))),
-            )),
-            |(pre, ty)| {
-                Type::Adblock(
-                    if pre.chars().any(|c| c == '@') {
-                        Kind::Allow
-                    } else {
-                        Kind::Deny
-                    },
-                    Box::new(ty),
-                )
-            },
-        ),
-    )(i)
-}
-
-fn comment<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, &'a str, E> {
-    context(
-        "Comment",
-        map(tuple((one_of("#!"), not_line_ending)), |(_, comment)| {
-            comment
-        }),
-    )(i)
-}
-
-fn eol<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, &str, E> {
-    context(
-        "EOL",
-        map(
-            tuple((space0, opt(comment), alt((eof, line_ending)))),
-            |(_, _, _)| "",
-        ),
-    )(i)
 }

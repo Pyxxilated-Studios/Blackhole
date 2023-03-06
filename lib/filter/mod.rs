@@ -7,7 +7,6 @@ use std::{
     time::SystemTime,
 };
 
-use bstr::ByteSlice;
 use regex::Regex;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
@@ -245,14 +244,14 @@ impl Filter {
             .into_iter()
             .rev()
             .try_fold(&self.rules, |current_node, entry| {
-                if let Some(entry) = current_node.children.get(entry.as_bstr()) {
+                if let Some(entry) = current_node.children.get(entry) {
                     Ok(entry)
                 } else if let Some((_, entry)) = current_node.children.iter().find(|(key, _)| {
                     if !key.contains(&b'*') {
                         return false;
                     }
 
-                    let key = String::from_utf8_lossy(key.as_bytes());
+                    let key = String::from_utf8_lossy(key);
                     let re = REPLACEMENT.replace_all(&key, ".*");
                     let matcher = Regex::new(&re).expect("Failed to parse rule regex");
                     matcher.is_match(&String::from_utf8_lossy(entry))
