@@ -6,7 +6,8 @@
     ip,
     no_coverage,
     once_cell,
-    option_get_or_insert_default
+    option_get_or_insert_default,
+    type_alias_impl_trait
 )]
 #![feature(async_closure)]
 

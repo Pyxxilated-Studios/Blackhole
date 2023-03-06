@@ -23,7 +23,7 @@ harness = false
 
 [dependencies]
 async-trait = "0.1"
-bstr = { version = "1", default-features = false, features = ["alloc"] }
+chumsky = "=1.0.0-alpha.0"
 clap = { version = "4", default-features = false, features = [
     "derive",
     "help",
@@ -33,7 +33,7 @@ clap = { version = "4", default-features = false, features = [
 const_format = "0.2"
 futures = "0.3"
 humantime-serde = "1"
-nom = "7"
+num-traits = { version = "0.2", default-features = false }
 rayon = "1"
 regex = "1"
 rustc-hash = "1"
