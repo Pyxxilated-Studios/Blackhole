@@ -144,10 +144,11 @@ pub struct Rules {
 
 #[cfg(debug_assertions)]
 type ParserResult<'a> =
-    impl Parser<'a, &'a str, Vec<Type>, extra::Err<chumsky::prelude::Rich<'a, &'a str>>>;
+    impl Parser<'a, &'a str, Vec<Option<Type>>, extra::Err<chumsky::prelude::Rich<'a, &'a str>>>;
 
 #[cfg(not(debug_assertions))]
-type ParserResult<'a> = impl Parser<'a, &'a str, Vec<Type>, extra::Err<chumsky::prelude::EmptyErr>>;
+type ParserResult<'a> =
+    impl Parser<'a, &'a str, Vec<Option<Type>>, extra::Err<chumsky::prelude::EmptyErr>>;
 
 impl Rules {
     fn parser<'a>() -> ParserResult<'a> {
@@ -252,13 +253,13 @@ impl Rules {
                 )
             });
 
-        let comment = one_of("#!").then(any().and_is(text::newline().not()).repeated());
+        let comment = one_of("#!")
+            .then(any().and_is(text::newline().not()).repeated())
+            .padded();
 
-        choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock))
-            .padded_by(comment.repeated())
-            .padded()
-            .repeated()
-            .collect()
+        let filter = choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock)).map(Some);
+
+        filter.or(comment.to(None)).padded().repeated().collect()
     }
 
     ///
@@ -280,7 +281,9 @@ impl Rules {
                 |mut rules, line| {
                     let (rules_, errors) = Self::parser().parse(&line).into_output_errors();
                     if errors.is_empty() {
-                        rules.extend(rules_.into_iter().flatten());
+                        if let Some(rules_) = rules_ {
+                            rules.extend(rules_.into_iter().flatten());
+                        }
                         Ok(rules)
                     } else {
                         println!("{errors:#?}");
