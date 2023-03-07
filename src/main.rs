@@ -61,10 +61,6 @@ async fn main() {
     .await
     .unwrap_or_default();
 
-    blackhole::config::Config::load(&cli)
-        .await
-        .unwrap_or_default();
-
     let (shutdown, shutdown_signal) = channel(false);
 
     let blackhole_handle = match blackhole::spawn(shutdown_signal).await {
