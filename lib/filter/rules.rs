@@ -222,6 +222,10 @@ impl Rules {
                 .repeated_exactly::<6>()
                 .then(ls32)
                 .slice(),
+            // h16 "::" h16
+            // For some reason this isn't handled by any of the above
+            // TODO: Make this redundant
+            h16.then(just("::")).then(h16).slice(),
         ));
 
         let ip = choice((ipv4, ipv6)).from_str::<IpAddr>().unwrapped();
