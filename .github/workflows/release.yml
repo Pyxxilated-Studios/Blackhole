@@ -57,7 +57,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
           file: Dockerfile
 
       - name: Extract metadata (tags, labels) for Alpine Image
@@ -81,7 +81,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           file: Dockerfile.alpine
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Extract metadata (tags, labels) for Distroless Image
         id: meta-distroless
@@ -102,6 +102,6 @@ jobs:
           tags: ${{ steps.meta-distroless.outputs.tags }}
           labels: ${{ steps.meta-distroless.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
           platforms: linux/amd64,linux/arm64
           file: Dockerfile.distroless
