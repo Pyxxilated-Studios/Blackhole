@@ -22,21 +22,19 @@ name = "benchmarks"
 harness = false
 
 [dependencies]
+ahash = { version = "0.8", features = ["serde"] }
 async-trait = "0.1"
 chumsky = "=1.0.0-alpha.0"
 clap = { version = "4", default-features = false, features = [
     "derive",
     "help",
     "std",
-    "usage",
 ] }
-const_format = "0.2"
 futures = "0.3"
 humantime-serde = "1"
-num-traits = { version = "0.2", default-features = false }
+lru-cache = "0.1"
 rayon = "1"
 regex = "1"
-rustc-hash = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"
 tokio = { version = "1", default-features = false, features = [
@@ -56,7 +54,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "ansi",
     "fmt",
     "parking_lot",
-    "smallvec",
     "tracing-log",
 ] }
 trust-dns-proto = { version = "0.22", default-features = false, features = [
@@ -85,6 +82,7 @@ warp = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.4", default-features = false, features = [
+    "cargo_bench_support",
     "html_reports",
     "plotters",
     "real_blackbox",

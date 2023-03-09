@@ -10,15 +10,17 @@
             : request.rule?.ty === "Allow"
             ? "border-l-2 border-l-success"
             : "";
+
+    let timestamp = new Date(request.timestamp.secs_since_epoch * 1_000);
 </script>
 
 <td class="text-xs md:text-sm">
     <span class="countdown">
-        {new Date(request.timestamp).toLocaleTimeString()}
+        {timestamp.toLocaleTimeString()}
     </span>
     <br />
     <span class="text-accent">
-        {new Date(request.timestamp).toLocaleDateString()}
+        {timestamp.toLocaleDateString()}
     </span>
 </td>
 <td class={`${ruleClass} text-xs md:text-sm`}>

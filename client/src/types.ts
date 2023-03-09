@@ -42,7 +42,7 @@ interface Average {
 }
 
 interface Config {
-    filter: { name: string; url: string }[];
+    filter: { name: string; url: string; enabled: boolean }[];
     schedule: { name: string; schedule: string }[];
     upstream: { ip: string; port: number }[];
 }

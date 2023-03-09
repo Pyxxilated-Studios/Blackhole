@@ -4,13 +4,13 @@ use std::{
     path::Path,
 };
 
+use ahash::AHashMap;
 use chumsky::{
     extra,
-    primitive::{any, choice, just, one_of},
+    primitive::{any, choice, end, just, one_of},
     text, IterParser, Parser,
 };
 use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use trust_dns_proto::{
     op::{Message, MessageType, ResponseCode},
@@ -138,7 +138,7 @@ impl Rule {
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default, Clone, PartialEq)]
 pub struct Rules {
-    pub(crate) children: FxHashMap<Vec<u8>, Rules>,
+    pub(crate) children: AHashMap<Vec<u8>, Rules>,
     pub(crate) rule: Option<Rule>,
 }
 
@@ -152,6 +152,12 @@ type ParserResult<'a> =
 
 impl Rules {
     fn parser<'a>() -> ParserResult<'a> {
+        let comment = one_of("#!")
+            .then(any().and_is(text::newline().not()).repeated())
+            .padded();
+
+        let eol = comment.ignored().or(text::newline()).or(end()).padded();
+
         let ipv4 = choice((
             just('1').then(text::digits(10).exactly(2)).slice(),
             just('2')
@@ -228,7 +234,10 @@ impl Rules {
             h16.then(just("::")).then(h16).slice(),
         ));
 
-        let ip = choice((ipv4, ipv6)).from_str::<IpAddr>().unwrapped();
+        let ip = choice((ipv4, ipv6))
+            .then_ignore(choice((eol, text::whitespace().at_least(1))))
+            .from_str::<IpAddr>()
+            .unwrapped();
 
         let domain = one_of(DOMAIN_CHARS)
             .repeated()
@@ -257,11 +266,9 @@ impl Rules {
                 )
             });
 
-        let comment = one_of("#!")
-            .then(any().and_is(text::newline().not()).repeated())
-            .padded();
-
-        let filter = choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock)).map(Some);
+        let filter = choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock))
+            .map(Some)
+            .then_ignore(eol);
 
         filter.or(comment.to(None)).padded().repeated().collect()
     }

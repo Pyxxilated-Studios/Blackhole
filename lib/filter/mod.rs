@@ -7,8 +7,8 @@ use std::{
     time::SystemTime,
 };
 
+use ahash::AHashSet;
 use regex::Regex;
-use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock, task::JoinError};
@@ -58,7 +58,7 @@ impl Hash for List {
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default)]
 pub struct Filter {
-    pub lists: FxHashSet<List>,
+    pub lists: AHashSet<List>,
     pub rules: Rules,
 }
 
@@ -108,6 +108,12 @@ impl Filter {
     }
 
     async fn download(list: List) -> Result<(), Error> {
+        #[cfg(debug_assertions)]
+        {
+            use tracing::debug;
+            debug!("Downloading: {list:?}");
+        }
+
         let path = list.to_string();
         let path = Path::new(&path);
 
@@ -215,8 +221,7 @@ impl Filter {
                 })?
         };
 
-        let mut filter = FILTER.write().await;
-        filter.rules = rules;
+        FILTER.write().await.rules = rules;
 
         Ok(())
     }
@@ -225,10 +230,22 @@ impl Filter {
     /// Reset the Global Filter to a blank slate. This is mostly useful
     /// when removing filters
     ///
-    pub async fn reset() {
-        FILTER.read().await.lists.iter().for_each(|list| {
+    pub async fn reset(old: Option<Vec<List>>) {
+        let lists = if let Some(old_lists) = old {
+            old_lists
+        } else {
+            FILTER.read().await.lists.iter().cloned().collect()
+        };
+
+        for list in lists {
+            #[cfg(debug_assertions)]
+            {
+                use tracing::debug;
+                debug!("Removing {list:?} ({})", list.to_string());
+            }
+
             std::fs::remove_file(list.to_string()).unwrap_or_default();
-        });
+        }
 
         Self::update().await;
         if let Err(err) = Self::import().await {

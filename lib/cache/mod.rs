@@ -1,8 +1,9 @@
 use core::mem::size_of;
 use std::sync::LazyLock;
-use std::{hash::BuildHasherDefault, time::Duration, time::Instant};
+use std::time::{Duration, Instant};
 
-use rustc_hash::FxHashMap;
+use ahash::AHashMap;
+use lru_cache::LruCache;
 use tokio::sync::RwLock;
 use trust_dns_proto::{rr::RecordType, xfer::DnsResponse};
 use trust_dns_server::server::Request;
@@ -10,16 +11,16 @@ use trust_dns_server::server::Request;
 use crate::statistics::{self, Statistic, Statistics};
 
 type PacketExpires = (DnsResponse, Vec<Instant>);
-type Entry = FxHashMap<RecordType, PacketExpires>;
+type Entry = AHashMap<RecordType, PacketExpires>;
 
 pub struct Cache {
-    cache: FxHashMap<String, Entry>,
+    cache: LruCache<String, Entry>,
 }
 
 impl Default for Cache {
     fn default() -> Self {
         Self {
-            cache: FxHashMap::with_capacity_and_hasher(1024, BuildHasherDefault::default()),
+            cache: LruCache::new(1024),
         }
     }
 }
@@ -35,17 +36,19 @@ impl Cache {
     /// records does not have a TTL (e.g. [`OPT`])
     ///
     pub async fn get(request: &Request) -> Option<DnsResponse> {
-        let cache = &*CACHE.read().await;
+        let response = {
+            let mut cache = CACHE.write().await;
 
-        let response = cache
-            .cache
-            .get(&request.query().original().name().to_string())
-            .and_then(|entry| entry.get(&request.query().query_type()));
+            cache
+                .cache
+                .get_mut(&request.query().original().name().to_string())
+                .and_then(|entry| entry.get(&request.query().query_type()))
+                .cloned()
+        };
 
         let now = Instant::now();
 
         response
-            .cloned()
             .map(|(mut response, expires)| {
                 expires.iter().all(|expire| *expire >= now).then(|| {
                     Statistics::record(Statistic::Cache(statistics::Cache {
@@ -81,7 +84,7 @@ impl Cache {
             misses: 1,
             size: match cache
                 .cache
-                .get(&key)
+                .get_mut(&key)
                 .map(|inner| inner.contains_key(&sub_key))
             {
                 Some(true) => 0,
@@ -90,17 +93,20 @@ impl Cache {
             },
         }));
 
-        let value: Vec<_> = response
+        let value = response
             .answers()
             .iter()
             .map(|answer| Instant::now() + Duration::from_secs(answer.ttl().into()))
             .collect();
 
-        *cache
-            .cache
-            .entry(key)
-            .or_default()
-            .entry(sub_key)
-            .or_insert((response.clone(), value)) = (response.clone(), value.clone());
+        if let Some(entry) = cache.cache.get_mut(&key) {
+            *entry.entry(sub_key).or_insert((response.clone(), value)) =
+                (response.clone(), value.clone());
+        } else {
+            let mut entry = AHashMap::default();
+            entry.insert(sub_key, (response.clone(), value));
+
+            cache.cache.insert(key, entry);
+        }
     }
 }

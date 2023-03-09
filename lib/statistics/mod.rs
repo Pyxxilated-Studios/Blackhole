@@ -2,14 +2,13 @@
 use std::fmt::Debug;
 
 use std::{
-    hash::BuildHasherDefault,
     sync::{LazyLock, RwLock},
     time::SystemTime,
 };
 
-use rustc_hash::FxHashMap;
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
-use tracing::{instrument, trace};
+use tracing::{debug, instrument};
 use trust_dns_proto::rr::Record;
 
 use crate::filter::rules::Rule;
@@ -21,7 +20,7 @@ pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
 
 impl Statistic {
-    fn record(self, stats: &mut FxHashMap<&'static str, Statistic>) {
+    fn record(self, stats: &mut AHashMap<&'static str, Statistic>) {
         match self {
             Statistic::Cache(cache) => match stats
                 .entry(CACHE)
@@ -114,13 +113,13 @@ pub enum Statistic {
 }
 
 pub struct Statistics {
-    statistics: FxHashMap<&'static str, Statistic>,
+    statistics: AHashMap<&'static str, Statistic>,
 }
 
 impl Default for Statistics {
     fn default() -> Self {
         Statistics {
-            statistics: FxHashMap::with_capacity_and_hasher(1024, BuildHasherDefault::default()),
+            statistics: AHashMap::with_capacity(1024),
         }
     }
 }
@@ -139,7 +138,7 @@ impl Statistics {
         from: Option<&String>,
         to: Option<&String>,
     ) -> Option<Statistic> {
-        trace!("Retrieving");
+        debug!("Retrieving statistics");
 
         match &STATISTICS.read().unwrap().statistics.get(statistic) {
             Some(Statistic::Requests(ref requests)) => {
@@ -164,18 +163,17 @@ impl Statistics {
     }
 
     #[inline]
-    pub fn statistics() -> FxHashMap<&'static str, Statistic> {
-        if let Ok(lock) = STATISTICS.read() {
-            lock.statistics.clone()
-        } else {
-            FxHashMap::default()
-        }
+    pub fn statistics() -> AHashMap<&'static str, Statistic> {
+        STATISTICS
+            .read()
+            .map(|statistics| statistics.statistics.clone())
+            .unwrap_or_default()
     }
 
     #[inline]
     pub fn clear() {
         if let Ok(mut lock) = STATISTICS.write() {
-            lock.statistics = FxHashMap::default();
+            lock.statistics = AHashMap::default();
         }
     }
 
