@@ -87,6 +87,12 @@ impl Server {
     }
 
     async fn update_config(body: Config) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
+        #[cfg(debug_assertions)]
+        {
+            use tracing::debug;
+            debug!("Updating Config: {body:#?}");
+        }
+
         match Config::set(|config| *config = body.clone()).await {
             Ok(_) => Ok(Box::new(Response::builder().body(""))),
             Err(err) => {
@@ -101,8 +107,8 @@ impl Server {
 mod test {
     use std::sync::LazyLock;
 
+    use ahash::AHashMap;
     use pretty_assertions::assert_eq;
-    use rustc_hash::FxHashMap;
     use tokio::sync::Mutex;
     use warp::hyper::header::CONTENT_TYPE;
 
@@ -165,7 +171,7 @@ mod test {
         let body = String::from_utf8(response.body().to_vec());
         let body = body.unwrap();
         assert_eq!(
-            serde_json::from_str::<FxHashMap<&str, Statistic>>(&body).unwrap(),
+            serde_json::from_str::<AHashMap<&str, Statistic>>(&body).unwrap(),
             Statistics::statistics()
         );
 

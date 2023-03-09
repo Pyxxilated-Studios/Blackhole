@@ -10,7 +10,11 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
-use crate::{dns::server::Upstream, filter::List, schedule::Schedule};
+use crate::{
+    dns::server::Upstream,
+    filter::{self, Filter, List},
+    schedule::Schedule,
+};
 
 pub static CONFIG: LazyLock<RwLock<Config>> = LazyLock::new(RwLock::default);
 pub(crate) static CONFIG_FILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(RwLock::default);
@@ -25,6 +29,9 @@ pub enum Error {
 
     #[error("Deserialisation Error: {0}")]
     Deserialization(#[from] toml::de::Error),
+
+    #[error("There was an issue updating the filters: {0}")]
+    FilterError(#[from] filter::Error),
 }
 
 const fn default_port() -> u16 {
@@ -48,6 +55,7 @@ pub struct Config {
     pub schedules: Vec<Schedule>,
 }
 
+#[async_trait::async_trait]
 pub trait Load {
     ///
     /// Load a configuration profile, which could be something like
@@ -60,6 +68,7 @@ pub trait Load {
     async fn load(&self, config: &mut Config) -> Result<(), Error>;
 }
 
+#[async_trait::async_trait]
 impl Load for PathBuf {
     ///
     /// Load a file (e.g. Configuration file)
@@ -75,6 +84,12 @@ impl Load for PathBuf {
 
         let conf = std::fs::read_to_string(self)?;
         let conf: Config = toml::from_str(&conf)?;
+
+        #[cfg(debug_assertions)]
+        {
+            use tracing::debug;
+            debug!("Config: {config:#?} :: {conf:#?}");
+        }
 
         config.upstreams.extend(conf.upstreams);
         config.filters.extend(conf.filters);
@@ -157,6 +172,12 @@ impl Config {
                 Err(e) => Err(e),
             }
         } else {
+            let config = CONFIG.read().await.clone();
+
+            if old_config.filters != config.filters {
+                Filter::reset(Some(old_config.filters)).await;
+            }
+
             Ok(())
         }
     }

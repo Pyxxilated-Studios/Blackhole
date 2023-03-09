@@ -1,15 +1,6 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(
-    array_try_from_fn,
-    async_fn_in_trait,
-    ip,
-    no_coverage,
-    once_cell,
-    option_get_or_insert_default,
-    type_alias_impl_trait
-)]
-#![feature(async_closure)]
+#![feature(ip, no_coverage, once_cell, type_alias_impl_trait)]
 
 use std::{
     io,
@@ -17,12 +8,13 @@ use std::{
     time::Duration,
 };
 
+use dns::server::Server;
 use tokio::{
     net::{TcpListener, UdpSocket},
     sync::watch::Receiver,
     task::JoinHandle,
 };
-use tracing::info;
+use tracing::{error, info};
 use trust_dns_server::ServerFuture;
 
 use crate::config::Config;
@@ -53,33 +45,31 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
     });
 
     let dns_server = {
-        let mut server = ServerFuture::new(match dns::server::Server::new().await {
-            Ok(server) => server,
-            Err(err) => {
-                // This realistically should not happen
-                return Err(err.into());
-            }
-        });
-        server.register_socket(UdpSocket::bind((IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)).await?);
+        let address = (IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
+        let mut server = ServerFuture::new(Server {});
+        server.register_socket(UdpSocket::bind(address).await?);
         server.register_listener(
             TcpListener::bind((IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)).await?,
             Duration::from_secs(30),
         );
 
+        info!(
+            "Running DNS server on {:#?}",
+            address
+                .to_socket_addrs()
+                .expect("Unable to parse Server Address")
+                .next()
+                .expect("Unable to parse Server Address")
+        );
+
         tokio::spawn(async move {
-            info!(
-                "Running DNS server on {:#?}",
-                (IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
-                    .to_socket_addrs()
-                    .expect("Unable to parse Server Address")
-                    .next()
-                    .expect("Unable to parse Server Address")
-            );
-            server.block_until_done().await.expect("Issue");
+            if let Err(err) = server.block_until_done().await {
+                error!("{err}");
+            }
         })
     };
 
-    let api = tokio::spawn(async move { api::Server.run().await });
+    let api = tokio::spawn(api::Server.run());
 
     Ok(tokio::spawn(async move {
         tokio::select! {
@@ -89,7 +79,9 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
             _ = shutdown_signal.changed() => {}
         }
 
-        Config::save().await.expect("Failed to save config");
+        Config::save().await.unwrap_or_else(|err| {
+            error!("{err}");
+        });
         drop(shutdown_signal);
     }))
 }

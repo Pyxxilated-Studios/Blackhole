@@ -30,7 +30,7 @@ use crate::{
     cache::Cache,
     config::Config,
     filter::{rules::Rule, Filter},
-    statistics::{self, Statistics},
+    statistics::{self, Average, Statistics},
 };
 
 fn default_port() -> u16 {
@@ -62,20 +62,10 @@ impl FromStr for Upstream {
     }
 }
 
-pub struct Server {
-    resolver: TokioAsyncResolver,
-}
+pub struct Server;
 
 impl Server {
-    ///
-    /// Create a new instance of the DNS Server
-    ///
-    /// # Errors
-    ///
-    /// This function realistically should not throw an error, based on the underlying documentation.
-    /// However, that documentation is also outdated -- but the code paths do not currentyl ever
-    /// reach an Err value
-    pub async fn new() -> Result<Self, ResolveError> {
+    async fn forward(&self, request: &Request) -> Result<DnsResponse, ResolveError> {
         let nameservers = Config::get(|config| config.upstreams.clone())
             .await
             .iter()
@@ -92,11 +82,7 @@ impl Server {
             ResolverOpts::default(),
         )?;
 
-        Ok(Self { resolver })
-    }
-
-    async fn forward(&self, request: &Request) -> Result<DnsResponse, ResolveError> {
-        self.resolver
+        resolver
             .lookup(request.query().name(), request.query().query_type())
             .await
             .map(|response| {
@@ -191,10 +177,16 @@ impl RequestHandler for Server {
             (*request.header()).into()
         });
 
-        stat.elapsed(timer.elapsed().as_nanos() as usize)
+        let elapsed = timer.elapsed().as_nanos() as usize;
+
+        stat.elapsed(elapsed)
             .code(response.response_code().to_string());
 
         Statistics::record(crate::statistics::Statistic::Request(stat));
+        Statistics::record(crate::statistics::Statistic::Average(Average {
+            count: 1,
+            average: elapsed,
+        }));
 
         response
     }

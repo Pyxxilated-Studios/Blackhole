@@ -32,6 +32,11 @@
 
     const update = async () => {
         try {
+            config.upstream = config.upstream.map(({ ip, port }) => ({
+                ip,
+                port: Number.parseInt(port.toString()),
+            }));
+
             let response = await fetch("/api/config", {
                 method: "POST",
                 body: JSON.stringify(config),
@@ -77,18 +82,90 @@
 {#if config}
     <h3>Filters</h3>
 
-    {#each config.filter as filter}
-        <div class="grid grid-cols-2 gap-4 my-4" id={filter.name + filter.url}>
-            <p>{filter.name}</p>
-            <p>{filter.url}</p>
-        </div>
-    {/each}
+    <div class="overflow-x-auto">
+        <table class="table w-full">
+            <!-- head -->
+            <thead>
+                <tr>
+                    <th>List</th>
+                    <th>URL</th>
+                    <th>Enabled</th>
+                </tr>
+            </thead>
+            <tbody>
+                {#each config.filter as filter (filter.name + " " + filter.url)}
+                    <tr>
+                        <td>
+                            <input
+                                type="text"
+                                placeholder="Filter Name"
+                                class="input w-full max-w-xs input-bordered input-primary"
+                                bind:value={filter.name}
+                            />
+                        </td>
+                        <td>
+                            <input
+                                type="text"
+                                placeholder="Filter URL"
+                                class="input w-full max-w-xs input-bordered input-primary"
+                                bind:value={filter.url}
+                            />
+                        </td>
+                        <td>
+                            <input type="checkbox" bind:checked={filter.enabled} class="checkbox" />
+                        </td>
+                    </tr>
+                {/each}
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Upstreams</h3>
+
+    <div class="overflow-x-auto">
+        <table class="table w-full">
+            <!-- head -->
+            <thead>
+                <tr>
+                    <th>Upstream</th>
+                    <th>Port</th>
+                </tr>
+            </thead>
+            <tbody>
+                {#each config.upstream as upstream (upstream.ip + " " + upstream.port)}
+                    <tr>
+                        <td>
+                            <input
+                                type="text"
+                                placeholder="IP"
+                                class="input w-full max-w-xs input-bordered input-primary"
+                                bind:value={upstream.ip}
+                            />
+                        </td>
+                        <td>
+                            <input
+                                type="text"
+                                placeholder="Port"
+                                class="input w-full max-w-xs input-bordered input-primary"
+                                bind:value={upstream.port}
+                            />
+                        </td>
+                    </tr>
+                {/each}
+            </tbody>
+        </table>
+    </div>
 
     <h3>Schedules</h3>
-    {#each config.schedule as schedule}
+    {#each config.schedule as schedule (schedule.name)}
         <div class="grid grid-cols-2" id={schedule.name}>
-            <p>For: {schedule.name}</p>
-            <p>Timer: {schedule.schedule}</p>
+            <p>{schedule.name}</p>
+            <input
+                type="text"
+                placeholder="Interval"
+                class="input w-full max-w-xs input-bordered input-primary"
+                bind:value={schedule.schedule}
+            />
         </div>
     {/each}
 

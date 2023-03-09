@@ -52,14 +52,11 @@ fn enable_tracing() {
 async fn main() {
     enable_tracing();
 
-    let mut cli = cli::Cli::parse();
+    let cli = cli::Cli::parse();
 
-    blackhole::config::Config::load(
-        cli.config
-            .get_or_insert_with(|| PathBuf::from("/config/blackhole.toml")),
-    )
-    .await
-    .unwrap_or_default();
+    blackhole::config::Config::load(&PathBuf::from(&cli.config))
+        .await
+        .unwrap_or_default();
 
     let (shutdown, shutdown_signal) = channel(false);
 

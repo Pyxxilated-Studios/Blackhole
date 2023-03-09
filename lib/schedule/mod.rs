@@ -3,11 +3,11 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use ahash::AHashMap;
 use futures::future::select_all;
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::sleep};
-use tracing::{instrument, trace};
+use tracing::{debug, instrument};
 
 use crate::{
     config::Config,
@@ -28,7 +28,7 @@ impl Sched {
     async fn run(&self) {
         match self {
             Sched::Filters => {
-                Filter::reset().await;
+                Filter::reset(None).await;
             }
             Sched::Logs => {
                 let cutoff = SystemTime::now()
@@ -55,6 +55,7 @@ impl Sched {
     }
 
     async fn init(&self) {
+        debug!("Running Sched init");
         match self {
             Sched::Filters => {
                 Filter::init().await;
@@ -93,7 +94,7 @@ impl std::future::Future for ScheduleInterval {
 
 #[derive(Default)]
 pub struct Scheduler {
-    schedules: FxHashMap<Sched, (Instant, Duration)>,
+    schedules: AHashMap<Sched, (Instant, Duration)>,
 }
 
 impl Scheduler {
@@ -115,9 +116,9 @@ impl Scheduler {
 
             let ScheduleInterval(schedule, next, _) = intervals[idx].clone();
 
-            trace!("Running schedule: {schedule:?}");
+            debug!("Running schedule: {schedule:?}");
             schedule.run().await;
-            trace!("Schedule completed");
+            debug!("Schedule completed");
 
             Self::schedule(Schedule {
                 name: schedule,
@@ -128,7 +129,7 @@ impl Scheduler {
     }
 
     async fn schedule(schedule: Schedule) -> Instant {
-        trace!("Rescheduling {schedule:?}");
+        debug!("Rescheduling {schedule:?}");
 
         SCHEDULER
             .write()
@@ -149,6 +150,7 @@ impl Scheduler {
     }
 
     pub async fn init(schedules: Vec<Schedule>) {
+        debug!("Running init for Schedules");
         for schedule in schedules {
             schedule.name.init().await;
             Self::schedule(schedule).await;
