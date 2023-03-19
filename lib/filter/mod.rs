@@ -15,7 +15,7 @@ use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock, task::JoinError};
 use tracing::{error, info, instrument};
 use trust_dns_server::server::Request;
 
-use crate::{config::Config, schedule::Sched};
+use crate::{config::Config, metrics, schedule::Sched};
 
 use self::rules::{Rule, Rules};
 
@@ -203,6 +203,7 @@ impl Filter {
     ///
     #[instrument]
     pub async fn import() -> Result<(), Error> {
+        let mut count = 0;
         let rules = {
             let filter = FILTER.read().await;
 
@@ -214,12 +215,15 @@ impl Filter {
                     info!("loading filter list: {}", list.name);
 
                     rules.merge(Rules::try_from(&mut list)?);
+                    count += list.entries;
 
                     info!("Loaded {} filter(s) for {}", list.entries, list.name);
 
                     Ok::<Rules, Error>(rules)
                 })?
         };
+
+        metrics::RULES_METRIC.set(count.try_into().unwrap());
 
         FILTER.write().await.rules = rules;
 
@@ -377,7 +381,7 @@ mod tests {
         assert!(rule.is_some());
 
         let rule = rule.unwrap();
-        assert_eq!(rule.ty, Kind::Deny);
+        assert_eq!(rule.kind, Kind::Deny);
     }
 
     #[test]
@@ -403,7 +407,7 @@ mod tests {
         assert!(rule.is_some());
 
         let rule = rule.unwrap();
-        assert_eq!(rule.ty, Kind::Deny);
+        assert_eq!(rule.kind, Kind::Deny);
         assert_eq!(rule.domain, "*mail.com");
     }
 }

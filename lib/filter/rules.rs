@@ -67,7 +67,7 @@ pub enum Type {
 #[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
 pub struct Rule {
     pub(crate) domain: String,
-    pub(crate) ty: Kind,
+    pub(crate) kind: Kind,
     pub(crate) action: Option<Action>,
 }
 
@@ -138,7 +138,7 @@ impl Rule {
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default, Clone, PartialEq)]
 pub struct Rules {
-    pub(crate) children: AHashMap<Vec<u8>, Rules>,
+    pub(crate) children: AHashMap<Box<[u8]>, Rules>,
     pub(crate) rule: Option<Rule>,
 }
 
@@ -242,6 +242,7 @@ impl Rules {
         let domain = one_of(DOMAIN_CHARS)
             .repeated()
             .at_least(1)
+            .at_most(63)
             .slice()
             .separated_by(just('.'))
             .at_least(1)
@@ -253,24 +254,20 @@ impl Rules {
             .then(domain)
             .map(|(ip, domain)| Type::Host(ip, domain));
 
-        let adblock = choice((just("@@||"), just("||@@"), just("||")))
-            .then(choice((ip.map(Type::Ip), domain.map(Type::Domain))))
-            .map(|(kind, ty)| {
-                Type::Adblock(
-                    if kind.chars().any(|c| c == '@') {
-                        Kind::Deny
-                    } else {
-                        Kind::Allow
-                    },
-                    Box::new(ty),
-                )
-            });
+        let adblock = choice((
+            just("@@||").to(Kind::Deny),
+            just("||@@").to(Kind::Deny),
+            just("||").to(Kind::Allow),
+        ))
+        .then(choice((ip.map(Type::Ip), domain.map(Type::Domain))))
+        .map(|(kind, ty)| Type::Adblock(kind, Box::new(ty)));
 
-        let filter = choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock))
+        choice((hosts, ip.map(Type::Ip), domain.map(Type::Domain), adblock))
             .map(Some)
-            .then_ignore(eol);
-
-        filter.or(comment.to(None)).padded().repeated().collect()
+            .or(comment.to(None))
+            .then_ignore(eol)
+            .repeated()
+            .collect()
     }
 
     ///
@@ -326,7 +323,10 @@ impl Rules {
             .split('.')
             .rev()
             .fold(self, |current_node, part| {
-                current_node.children.entry(part.into()).or_default()
+                current_node
+                    .children
+                    .entry(part.as_bytes().into())
+                    .or_default()
             })
             .rule
         {
@@ -344,7 +344,7 @@ impl Rules {
             r => {
                 *r = Some(Rule {
                     domain,
-                    ty,
+                    kind: ty,
                     action: match addr {
                         None => None,
                         Some(addr @ IpAddr::V4(_)) => Some(Action {

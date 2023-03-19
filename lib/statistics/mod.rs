@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 use trust_dns_proto::rr::Record;
 
-use crate::filter::rules::Rule;
+use crate::{
+    filter::rules::{Kind, Rule},
+    metrics,
+};
 
 static STATISTICS: LazyLock<RwLock<Statistics>> = LazyLock::new(RwLock::default);
 
@@ -52,6 +55,8 @@ impl Statistic {
                         av.average =
                             (av.average * av.count + average.count * average.average) / count;
                         av.count = count;
+
+                        metrics::DURATION_METRIC.observe(average.average as f64);
                     }
                     _ => unreachable!(),
                 }
@@ -60,14 +65,49 @@ impl Statistic {
                 .entry(REQUESTS)
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
-                Statistic::Requests(r) => r.push(request),
+                Statistic::Requests(r) => {
+                    metrics::REQUESTS_METRIC
+                        .get_or_create(&metrics::Request {
+                            question: request.question.clone(),
+                            record: request
+                                .answers
+                                .first()
+                                .map(|answer| answer.rr_type().to_string())
+                                .unwrap_or_default(),
+                        })
+                        .inc();
+
+                    if request
+                        .rule
+                        .as_ref()
+                        .map_or(false, |rule| rule.kind == Kind::Deny)
+                    {
+                        metrics::BLOCKED_METRIC.inc();
+                    }
+
+                    r.push(request);
+                }
                 _ => unreachable!(),
             },
             Statistic::Requests(requests) => match stats
                 .entry(REQUESTS)
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
-                Statistic::Requests(r) => r.extend(requests.into_iter()),
+                Statistic::Requests(r) => {
+                    for request in r.iter() {
+                        metrics::REQUESTS_METRIC
+                            .get_or_create(&metrics::Request {
+                                question: request.question.clone(),
+                                record: request
+                                    .answers
+                                    .first()
+                                    .map(|answer| answer.rr_type().to_string())
+                                    .unwrap_or_default(),
+                            })
+                            .inc();
+                    }
+                    r.extend(requests.into_iter());
+                }
                 _ => unreachable!(),
             },
         }

@@ -24,6 +24,7 @@ pub mod cache;
 pub mod config;
 pub mod dns;
 pub mod filter;
+pub mod metrics;
 pub mod schedule;
 pub mod statistics;
 
@@ -36,6 +37,8 @@ pub mod statistics;
 #[no_coverage]
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
     let port = config::Config::get(|config| config.port).await;
+
+    metrics::init();
 
     let scheduler = tokio::spawn({
         async move {
