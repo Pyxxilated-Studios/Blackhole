@@ -1,5 +1,7 @@
-use std::{collections::HashMap, net::Ipv6Addr};
+use std::net::Ipv6Addr;
 
+use ahash::AHashMap;
+use prometheus_client::encoding::text::encode;
 use serde::Serialize;
 use tracing::error;
 use warp::{
@@ -7,7 +9,7 @@ use warp::{
     reply::json, Filter, Rejection, Reply,
 };
 
-use crate::{config::Config, statistics::Statistics};
+use crate::{config::Config, metrics::REGISTRY, statistics::Statistics};
 
 pub struct Server;
 
@@ -18,7 +20,7 @@ fn statistics() -> BoxedFilter<(impl Reply,)> {
 
     warp::path!("statistics" / String)
         .and(warp::path::end())
-        .and(warp::query::<HashMap<String, String>>())
+        .and(warp::query::<AHashMap<String, String>>())
         .map(|statistic: String, params| Server::statistics(&statistic, &params))
         .or(all)
         .boxed()
@@ -51,10 +53,27 @@ fn config() -> BoxedFilter<(impl Reply,)> {
         .boxed()
 }
 
+fn metrics() -> BoxedFilter<(impl Reply,)> {
+    warp::path("metrics")
+        .and(warp::get())
+        .and(warp::path::end())
+        .map(|| {
+            let mut metrics = String::default();
+            encode(&mut metrics, &REGISTRY.read().unwrap()).unwrap();
+            Response::builder()
+                .header(
+                    CONTENT_TYPE,
+                    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+                )
+                .body(metrics)
+        })
+        .boxed()
+}
+
 impl Server {
     #[no_coverage]
     pub async fn run(self) {
-        let api = warp::path("api").and(statistics().or(config()));
+        let api = warp::path("api").and(statistics().or(config()).or(metrics()));
 
         warp::serve(api).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
     }
@@ -65,7 +84,7 @@ impl Server {
 
     fn statistics(
         statistic: &str,
-        params: &HashMap<String, String>,
+        params: &AHashMap<String, String>,
     ) -> Box<(dyn warp::Reply + 'static)> {
         let from = params.get("from");
         let to = params.get("to");

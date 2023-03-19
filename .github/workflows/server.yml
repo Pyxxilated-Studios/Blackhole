@@ -39,7 +39,7 @@ jobs:
       - name: Run rust-clippy
         run:
           cargo clippy --all-features --message-format=json -- -D
-          clippy::pedantic -A clippy::must-use-candidate | clippy-sarif | tee
+          clippy::pedantic -A clippy::must-use-candidate -A clippy::cast-precision-loss | clippy-sarif | tee
           rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
 
