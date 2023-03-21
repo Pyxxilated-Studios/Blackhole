@@ -75,10 +75,8 @@
                     {#if idx == shownRequests.length - 1}
                         <tr
                             use:inview
-                            on:enter={(event) => {
-                                if (event.detail.inView) {
-                                    count += 25;
-                                }
+                            on:inview_enter={(_) => {
+                                count += 25;
                             }}
                         >
                             <Request {request} />

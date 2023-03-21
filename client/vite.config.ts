@@ -9,7 +9,6 @@ const config: UserConfig = {
         },
     },
     build: {
-        cssCodeSplit: false,
         reportCompressedSize: false,
         rollupOptions: {
             output: {
