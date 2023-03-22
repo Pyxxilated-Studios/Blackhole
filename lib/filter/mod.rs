@@ -223,7 +223,7 @@ impl Filter {
                 })?
         };
 
-        metrics::RULES_METRIC.set(count.try_into().unwrap());
+        metrics::RULES.set(count.try_into().unwrap());
 
         FILTER.write().await.rules = rules;
 

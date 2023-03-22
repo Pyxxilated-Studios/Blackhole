@@ -1,0 +1,31 @@
+version: '3.6'
+
+networks:
+  dns:
+    external: false
+
+services:
+  blakchole:
+    image: blackhole:distroless
+    container_name: blackhole
+    platform: linux/arm64/v8
+    ports:
+      - 5000:5000
+      - 3000:3000
+      - 53:53/udp
+      - 53:53/tcp
+    networks:
+      - dns
+    volumes:
+      - ./:/config
+
+  prometheus:
+    image: prom/prometheus
+    platform: linux/arm64/v8
+    container_name: prometheus
+    ports:
+      - 9090:9090
+    networks:
+      - dns
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml

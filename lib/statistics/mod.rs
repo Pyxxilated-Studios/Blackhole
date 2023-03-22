@@ -30,6 +30,12 @@ impl Statistic {
                 .or_insert_with(|| Statistic::Cache(Cache::default()))
             {
                 Statistic::Cache(exists) => {
+                    metrics::CACHE
+                        .get_or_create(&metrics::Cache {
+                            hit: (cache.hits > 0).to_string(),
+                        })
+                        .inc();
+
                     exists.hits += cache.hits;
                     exists.misses += cache.misses;
                     exists.size += cache.size;
@@ -56,7 +62,7 @@ impl Statistic {
                             (av.average * av.count + average.count * average.average) / count;
                         av.count = count;
 
-                        metrics::DURATION_METRIC.observe(average.average as f64);
+                        metrics::DURATION.observe(average.average as f64);
                     }
                     _ => unreachable!(),
                 }
@@ -66,14 +72,10 @@ impl Statistic {
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => {
-                    metrics::REQUESTS_METRIC
+                    metrics::REQUESTS
                         .get_or_create(&metrics::Request {
+                            client: request.client.clone(),
                             question: request.question.clone(),
-                            record: request
-                                .answers
-                                .first()
-                                .map(|answer| answer.rr_type().to_string())
-                                .unwrap_or_default(),
                         })
                         .inc();
 
@@ -82,7 +84,7 @@ impl Statistic {
                         .as_ref()
                         .map_or(false, |rule| rule.kind == Kind::Deny)
                     {
-                        metrics::BLOCKED_METRIC.inc();
+                        metrics::BLOCKED.inc();
                     }
 
                     r.push(request);
@@ -95,14 +97,10 @@ impl Statistic {
             {
                 Statistic::Requests(r) => {
                     for request in r.iter() {
-                        metrics::REQUESTS_METRIC
+                        metrics::REQUESTS
                             .get_or_create(&metrics::Request {
+                                client: request.client.clone(),
                                 question: request.question.clone(),
-                                record: request
-                                    .answers
-                                    .first()
-                                    .map(|answer| answer.rr_type().to_string())
-                                    .unwrap_or_default(),
                             })
                             .inc();
                     }
