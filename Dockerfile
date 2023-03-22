@@ -26,11 +26,9 @@ WORKDIR /blackhole
 # Generate cached dependencies
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
-RUN mkdir lib
-RUN mkdir benches
-RUN touch benches/benchmarks.rs
-RUN touch lib/src.rs
-RUN cargo build --release
+RUN mkdir lib benches
+RUN touch lib/src.rs benches/benchmarks.rs
+RUN cargo build --bin blackhole --release
 
 # Now build the actual server
 RUN rm src/*.rs lib/*.rs
@@ -40,7 +38,7 @@ COPY ./lib ./lib
 RUN touch src/main.rs lib/src.rs
 RUN cargo build --release
 
-FROM denoland/deno:debian-1.30.3
+FROM oven/bun
 
 RUN apt update && apt install -y dnsutils ca-certificates
 
@@ -49,7 +47,6 @@ WORKDIR /blackhole
 COPY --from=client /client/build .
 COPY ./client/package.json .
 COPY --from=server /blackhole/target/release/blackhole .
-
 COPY ./entrypoint.bash .
 
 VOLUME /config

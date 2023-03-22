@@ -1,4 +1,4 @@
-import adapter from "svelte-adapter-deno";
+import adapter from "svelte-adapter-bun";
 import preprocess from "svelte-preprocess";
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -10,6 +10,11 @@ const config = {
     kit: {
         adapter: adapter({
             out: "build",
+            precompress: {
+                brotli: true,
+                gzip: true,
+                files: ["htm", "html"]
+            }
         }),
     },
 };

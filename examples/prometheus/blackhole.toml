@@ -1,0 +1,21 @@
+port = 53
+
+[[upstream]]
+ip = "9.9.9.9"
+port = 53
+
+[[upstream]]
+ip = "1.1.1.1"
+port = 53
+
+[[filter]]
+name = "Energized"
+url = "https://o0.pages.dev/mini/domains.txt"
+
+[[schedule]]
+name = "Filters"
+schedule = "6h"
+
+[[schedule]]
+name = "Logs"
+schedule = "6h"

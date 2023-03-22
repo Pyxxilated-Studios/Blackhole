@@ -1,0 +1,63 @@
+version: '3.6'
+
+networks:
+  web:
+    external: false
+
+services:
+  traefik:
+    container_name: traefik
+    image: traefik
+    ports:
+      - 80:80
+      - 8080:8080
+      - 8888:8888
+    networks:
+      - web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - --api=true
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --entrypoints.web.address=:80
+      - --log.level=DEBUG
+      - --metrics.prometheus=true
+      - --providers.docker=true
+      - --providers.docker.watch=true
+      - --providers.docker.exposedbydefault=true
+      - --providers.docker.network=web
+    labels:
+      traefik.enable: false
+
+  blackhole:
+    image: blackhole
+    container_name: blackhole
+    platform: linux/arm64/v8
+    ports:
+      - 3000:3000
+      - 5000:5000
+      - 53:53/udp
+      - 53:53/tcp
+    networks:
+      - web
+    volumes:
+      - ./:/config
+    labels:
+      traefik.port: 3000
+      traefik.http.routers.blackhole.rule: Host(`blackhole.localhost`)
+      traefik.http.services.blackhole.loadbalancer.server.port: 3000
+      traefik.http.routers.blackhole.entrypoints: web
+
+  prometheus:
+    image: prom/prometheus
+    platform: linux/arm64/v8
+    container_name: prometheus
+    networks:
+      - web
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    labels:
+      traefik.http.routers.prometheus.rule: Host(`prometheus.localhost`)
+      traefik.http.services.prometheus.loadbalancer.server.port: 9090
+      traefik.http.routers.prometheus.entrypoints: web
