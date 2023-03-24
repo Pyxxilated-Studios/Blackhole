@@ -6,9 +6,8 @@ networks:
 
 services:
   blakchole:
-    image: blackhole:distroless
+    image: ghcr.io/pyxxil/blackhole
     container_name: blackhole
-    platform: linux/arm64/v8
     ports:
       - 5000:5000
       - 3000:3000

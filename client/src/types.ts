@@ -20,6 +20,7 @@ interface Request {
     client: string;
     elapsed: number;
     question: string;
+    query_type: string;
     rule: Rule | null;
     status: string;
     timestamp: {

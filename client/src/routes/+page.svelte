@@ -97,7 +97,7 @@
                 blockedRequestCount = 0;
 
                 requests.forEach((request) => {
-                    data[request.answers[0].rr_type] = (data[request.answers[0].rr_type] ?? 0) + 1;
+                    data[request.query_type] = (data[request.query_type] ?? 0) + 1;
 
                     let time = new Date(
                         ~~(new Date(request.timestamp.secs_since_epoch).getTime() / TIME_SERIES) *

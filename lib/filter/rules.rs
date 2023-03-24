@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     io::{BufRead, BufReader},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
@@ -137,8 +138,8 @@ impl Rule {
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default, Clone, PartialEq)]
-pub struct Rules {
-    pub(crate) children: AHashMap<Box<[u8]>, Rules>,
+pub struct Rules<'a> {
+    pub(crate) children: AHashMap<Cow<'a, str>, Rules<'a>>,
     pub(crate) rule: Option<Rule>,
 }
 
@@ -150,8 +151,8 @@ type ParserResult<'a> =
 type ParserResult<'a> =
     impl Parser<'a, &'a str, Vec<Option<Type>>, extra::Err<chumsky::prelude::EmptyErr>>;
 
-impl Rules {
-    fn parser<'a>() -> ParserResult<'a> {
+impl<'a> Rules<'a> {
+    fn parser<'b>() -> ParserResult<'b> {
         let comment = one_of("#!")
             .then(any().and_is(text::newline().not()).repeated())
             .padded();
@@ -289,9 +290,7 @@ impl Rules {
                 |mut rules, line| {
                     let (rules_, errors) = Self::parser().parse(&line).into_output_errors();
                     if errors.is_empty() {
-                        if let Some(rules_) = rules_ {
-                            rules.extend(rules_.into_iter().flatten());
-                        }
+                        rules.extend(rules_.into_iter().flatten().flatten());
                         Ok(rules)
                     } else {
                         println!("{errors:#?}");
@@ -325,7 +324,7 @@ impl Rules {
             .fold(self, |current_node, part| {
                 current_node
                     .children
-                    .entry(part.as_bytes().into())
+                    .entry(Cow::Owned(part.to_string()))
                     .or_default()
             })
             .rule
@@ -373,7 +372,7 @@ impl Rules {
         })
     }
 
-    pub fn merge(&mut self, rules: Rules) {
+    pub fn merge(&mut self, rules: Rules<'a>) {
         for (child, rules) in rules.children {
             let new = self.children.entry(child).or_default();
             new.rule = rules.rule.clone();
@@ -382,7 +381,7 @@ impl Rules {
     }
 }
 
-impl TryFrom<&mut super::List> for Rules {
+impl<'a> TryFrom<&mut super::List> for Rules<'a> {
     type Error = super::Error;
 
     fn try_from(value: &mut super::List) -> Result<Self, Self::Error> {

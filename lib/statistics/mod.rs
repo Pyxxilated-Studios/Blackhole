@@ -9,7 +9,7 @@ use std::{
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
-use trust_dns_proto::rr::Record;
+use trust_dns_proto::rr::{Record, RecordType};
 
 use crate::{
     filter::rules::{Kind, Rule},
@@ -96,7 +96,7 @@ impl Statistic {
                 .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
             {
                 Statistic::Requests(r) => {
-                    for request in r.iter() {
+                    for request in &requests {
                         metrics::REQUESTS
                             .get_or_create(&metrics::Request {
                                 client: request.client.clone(),
@@ -132,6 +132,7 @@ pub struct Cache {
 pub struct Request {
     pub client: String,
     pub question: String,
+    pub query_type: RecordType,
     pub answers: Vec<Record>,
     pub rule: Option<Rule>,
     pub status: String,
