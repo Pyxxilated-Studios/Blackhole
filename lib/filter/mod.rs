@@ -57,9 +57,9 @@ impl Hash for List {
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Default)]
-pub struct Filter {
+pub struct Filter<'a> {
     pub lists: AHashSet<List>,
-    pub rules: Rules,
+    pub rules: Rules<'a>,
 }
 
 #[derive(Debug, Error)]
@@ -80,7 +80,7 @@ impl From<ureq::Error> for Error {
     }
 }
 
-impl Filter {
+impl<'a> Filter<'a> {
     pub async fn init() {
         Self::update().await;
         if let Err(err) = Self::import().await {
@@ -265,22 +265,19 @@ impl Filter {
             .into_iter()
             .rev()
             .try_fold(&self.rules, |current_node, entry| {
-                if let Some(entry) = current_node.children.get(entry) {
-                    Ok(entry)
-                } else if let Some((_, entry)) = current_node.children.iter().find(|(key, _)| {
-                    if !key.contains(&b'*') {
-                        return false;
-                    }
-
-                    let key = String::from_utf8_lossy(key);
-                    let re = REPLACEMENT.replace_all(&key, ".*");
-                    let matcher = Regex::new(&re).expect("Failed to parse rule regex");
-                    matcher.is_match(&String::from_utf8_lossy(entry))
-                }) {
-                    Ok(entry)
-                } else {
-                    Err(current_node)
-                }
+                let key_ = String::from_utf8_lossy(entry);
+                current_node.children.get(&key_).ok_or_else(|| {
+                    current_node
+                        .children
+                        .iter()
+                        .filter(|(key, _)| key.contains('*'))
+                        .find(|(key, _)| {
+                            let re = REPLACEMENT.replace_all(key, ".*");
+                            let matcher = Regex::new(&re).expect("Failed to parse rule regex");
+                            matcher.is_match(&key_)
+                        })
+                        .map_or(current_node, |(_, entry)| entry)
+                })
             })
             .map_or_else(|err| &err.rule, |rule| &rule.rule)
             .clone()

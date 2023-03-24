@@ -13,8 +13,8 @@ const config = {
             precompress: {
                 brotli: true,
                 gzip: true,
-                files: ["htm", "html"]
-            }
+                files: ["htm", "html"],
+            },
         }),
     },
 };

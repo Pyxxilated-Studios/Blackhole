@@ -31,16 +31,17 @@ impl Sched {
                 Filter::reset(None).await;
             }
             Sched::Logs => {
-                let cutoff = SystemTime::now()
-                    - Config::get(|config| {
-                        config
-                            .schedules
-                            .iter()
-                            .find(|sched| sched.name == Sched::Logs)
-                            .map(|sched| sched.schedule)
-                    })
-                    .await
-                    .unwrap_or(Duration::from_secs(60 * 60 * 6));
+                let schedule = Config::get(|config| {
+                    config
+                        .schedules
+                        .iter()
+                        .find(|sched| sched.name == Sched::Logs)
+                        .map(|sched| sched.schedule)
+                })
+                .await
+                .unwrap_or(Duration::from_secs(60 * 60 * 6));
+
+                let cutoff = SystemTime::now() - schedule;
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 use trust_dns_proto::{
     op::{Message, MessageType, ResponseCode},
-    rr::Record,
+    rr::{Record, RecordType},
     xfer::DnsResponse,
 };
 use trust_dns_resolver::{
@@ -103,37 +103,17 @@ impl Server {
                     .into()
             })
     }
-}
 
-#[async_trait::async_trait]
-impl RequestHandler for Server {
-    async fn handle_request<R: ResponseHandler>(
-        &self,
+    async fn create_response<R: ResponseHandler>(
+        stat: &mut statistics::Request,
         request: &Request,
+        response: &mut Result<DnsResponse, ResolveError>,
         mut response_handle: R,
-    ) -> ResponseInfo {
-        let mut stat = statistics::Request::default();
-        stat.client(request.src().ip().to_canonical().to_string())
-            .question(request.query().original().name().to_string());
-
-        let timer = Instant::now();
-
-        // Check the fiter first, as we need to check it anyways if it's in the cache
-        // TODO: Does it make sense to also cache the filter result?
-        let response = if let Some(rule) = Filter::check(request) {
-            stat.rule(Some(rule.clone()));
-            Ok(rule.apply(request))
-        } else if let Some(response) = Cache::get(request).await {
-            stat.cached(true);
-            Ok(response)
-        } else {
-            self.forward(request).await
-        };
-
+    ) -> Result<ResponseInfo, std::io::Error> {
         let builder = MessageResponseBuilder::from_message_request(request);
 
-        let response = match response {
-            Ok(mut response) => {
+        match response.as_mut() {
+            Ok(response) => {
                 response.set_id(request.id());
                 stat.answers(response.answers());
 
@@ -145,7 +125,7 @@ impl RequestHandler for Server {
                     // a) Are not already in the cache
                     // b) The response wasn't a failure (otherwise we're likely to retrieve invalid responses)
                     // c) There's no rule for the request
-                    Cache::insert(&response).await;
+                    Cache::insert(&*response).await;
                 }
 
                 response_handle
@@ -172,10 +152,41 @@ impl RequestHandler for Server {
                 response_handle.send_response(response).await
             }
         }
-        .unwrap_or_else(|err| {
-            error!("{:#?}", err);
-            (*request.header()).into()
-        });
+    }
+}
+
+#[async_trait::async_trait]
+impl RequestHandler for Server {
+    async fn handle_request<R: ResponseHandler>(
+        &self,
+        request: &Request,
+        response_handle: R,
+    ) -> ResponseInfo {
+        let mut stat = statistics::Request::default();
+        stat.client(request.src().ip().to_canonical().to_string())
+            .question(request.query().original().name().to_string())
+            .query_type(request.query().original().query_type());
+
+        let timer = Instant::now();
+
+        // Check the fiter first, as we need to check it anyways if it's in the cache
+        // TODO: Does it make sense to also cache the filter result?
+        let mut response = if let Some(rule) = Filter::check(request) {
+            stat.rule(Some(rule.clone()));
+            Ok(rule.apply(request))
+        } else if let Some(response) = Cache::get(request).await {
+            stat.cached(true);
+            Ok(response)
+        } else {
+            self.forward(request).await
+        };
+
+        let response = Server::create_response(&mut stat, request, &mut response, response_handle)
+            .await
+            .unwrap_or_else(|err| {
+                error!("{:#?}", err);
+                (*request.header()).into()
+            });
 
         let elapsed = timer.elapsed().as_nanos() as usize;
 
@@ -195,6 +206,11 @@ impl RequestHandler for Server {
 impl statistics::Request {
     fn client(&mut self, client: String) -> &mut Self {
         self.client = client;
+        self
+    }
+
+    fn query_type(&mut self, query_type: RecordType) -> &mut Self {
+        self.query_type = query_type;
         self
     }
 
@@ -234,6 +250,7 @@ impl Default for statistics::Request {
         Self {
             client: String::default(),
             question: String::default(),
+            query_type: RecordType::A,
             answers: Vec::default(),
             rule: Option::default(),
             status: String::default(),

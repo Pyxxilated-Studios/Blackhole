@@ -31,9 +31,8 @@ services:
       traefik.enable: false
 
   blackhole:
-    image: blackhole
+    image: ghcr.io/pyxxil/blackhole
     container_name: blackhole
-    platform: linux/arm64/v8
     ports:
       - 3000:3000
       - 5000:5000
