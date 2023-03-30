@@ -1,11 +1,11 @@
 port = 53
 
 [[upstream]]
-ip = "9.9.9.9"
+ip = "1.1.1.1"
 port = 53
 
 [[upstream]]
-ip = "1.1.1.1"
+ip = "9.9.9.9"
 port = 53
 
 [[filter]]

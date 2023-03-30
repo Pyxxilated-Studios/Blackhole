@@ -35,9 +35,17 @@ pub static DURATION: LazyLock<Histogram> = LazyLock::new(|| {
 pub fn init() {
     let mut registry = REGISTRY.write().expect("Unable to init registry");
 
-    registry.register("requests", "Number of requests", REQUESTS.clone());
-    registry.register("duration", "Duration of request", DURATION.clone());
-    registry.register("blocked", "Number of requests blocked", BLOCKED.clone());
-    registry.register("rules", "Number of rules", RULES.clone());
-    registry.register("cache", "Cache effectiveness", CACHE.clone());
+    registry.register("blackhole_requests", "Number of requests", REQUESTS.clone());
+    registry.register(
+        "blackhole_request_duration",
+        "Duration of requests",
+        DURATION.clone(),
+    );
+    registry.register(
+        "blackhole_requests_blocked",
+        "Number of requests blocked",
+        BLOCKED.clone(),
+    );
+    registry.register("blackhole_rules", "Number of rules", RULES.clone());
+    registry.register("blackhole_cache", "Cache effectiveness", CACHE.clone());
 }

@@ -115,15 +115,15 @@ impl Scheduler {
                 .collect::<Vec<_>>();
             let (_, idx, _) = select_all(intervals.clone()).await;
 
-            let ScheduleInterval(schedule, next, _) = intervals[idx].clone();
+            let ScheduleInterval(schedule, next, _) = &intervals[idx];
 
             debug!("Running schedule: {schedule:?}");
             schedule.run().await;
             debug!("Schedule completed");
 
             Self::schedule(Schedule {
-                name: schedule,
-                schedule: next,
+                name: schedule.clone(),
+                schedule: *next,
             })
             .await;
         }
