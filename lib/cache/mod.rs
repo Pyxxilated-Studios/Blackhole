@@ -36,7 +36,7 @@ impl Cache {
     /// records does not have a TTL (e.g. [`OPT`])
     ///
     pub async fn get(request: &Request) -> Option<DnsResponse> {
-        let response = {
+        let Some((mut response, expires)) = ({
             let mut cache = CACHE.write().await;
 
             cache
@@ -44,33 +44,28 @@ impl Cache {
                 .get_mut(&request.query().original().name().to_string())
                 .and_then(|entry| entry.get(&request.query().query_type()))
                 .cloned()
-        };
+        }) else { return None };
 
         let now = Instant::now();
 
-        response
-            .map(|(mut response, expires)| {
-                expires.iter().all(|expire| *expire >= now).then(|| {
-                    Statistics::record(Statistic::Cache(statistics::Cache {
-                        hits: 1,
-                        misses: 0,
-                        size: 0,
-                    }));
+        expires.iter().all(|expire| *expire >= now).then(|| {
+            Statistics::record(Statistic::Cache(statistics::Cache {
+                hits: 1,
+                misses: 0,
+                size: 0,
+            }));
 
-                    response
-                        .answers_mut()
-                        .iter_mut()
-                        .zip(expires.into_iter())
-                        .for_each(|(answer, expire)| {
-                            answer.set_ttl(
-                                u32::try_from((expire - now).as_secs()).expect("Invalid expiry"),
-                            );
-                        });
+            response
+                .answers_mut()
+                .iter_mut()
+                .zip(expires.into_iter())
+                .for_each(|(answer, expire)| {
+                    answer
+                        .set_ttl(u32::try_from((expire - now).as_secs()).expect("Invalid expiry"));
+                });
 
-                    response
-                })
-            })
-            .unwrap_or_default()
+            response
+        })
     }
 
     pub async fn insert(response: &DnsResponse) {
