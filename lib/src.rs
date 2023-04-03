@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(ip, no_coverage, once_cell, type_alias_impl_trait)]
+#![feature(ip, no_coverage, lazy_cell, type_alias_impl_trait)]
 
 use std::{
     io,
