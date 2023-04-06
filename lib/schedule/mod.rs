@@ -4,7 +4,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::sleep};
 use tracing::{debug, instrument};
@@ -74,25 +73,6 @@ pub struct Schedule {
     pub schedule: Duration,
 }
 
-#[derive(Clone)]
-struct ScheduleInterval(Sched, Duration, Instant);
-
-impl std::future::Future for ScheduleInterval {
-    type Output = ();
-
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        if self.2.duration_since(std::time::Instant::now()).is_zero() {
-            std::task::Poll::Ready(())
-        } else {
-            cx.waker().wake_by_ref();
-            std::task::Poll::Pending
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct Scheduler {
     schedules: AHashMap<Sched, (Instant, Duration)>,
@@ -102,30 +82,31 @@ impl Scheduler {
     #[instrument]
     async fn run() {
         loop {
-            let schedules = SCHEDULER.read().await.schedules.clone();
+            let mut soonest = Instant::now();
 
-            if schedules.is_empty() {
-                sleep(Duration::from_secs(5)).await;
-                continue;
+            let schedules = { SCHEDULER.read().await.schedules.clone() };
+
+            for (schedule, (at, time)) in schedules {
+                if at <= Instant::now() {
+                    debug!("Running schedule: {schedule:?}");
+                    schedule.run().await;
+                    debug!("Schedule completed");
+
+                    let next = Self::schedule(Schedule {
+                        name: schedule,
+                        schedule: time,
+                    })
+                    .await;
+
+                    if next < soonest {
+                        soonest = next;
+                    }
+                } else if at < soonest {
+                    soonest = at;
+                }
             }
 
-            let intervals = schedules
-                .into_iter()
-                .map(|(sched, (at, time))| ScheduleInterval(sched, time, at))
-                .collect::<Vec<_>>();
-            let (_, idx, _) = select_all(intervals.clone()).await;
-
-            let ScheduleInterval(schedule, next, _) = &intervals[idx];
-
-            debug!("Running schedule: {schedule:?}");
-            schedule.run().await;
-            debug!("Schedule completed");
-
-            Self::schedule(Schedule {
-                name: schedule.clone(),
-                schedule: *next,
-            })
-            .await;
+            sleep(soonest - Instant::now()).await;
         }
     }
 
