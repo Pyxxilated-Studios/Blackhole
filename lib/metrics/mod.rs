@@ -12,6 +12,8 @@ pub static REGISTRY: LazyLock<RwLock<Registry>> = LazyLock::new(RwLock::default)
 pub struct Request {
     pub client: String,
     pub question: String,
+    pub r#type: String,
+    pub rule: String,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
