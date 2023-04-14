@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    fmt::Display,
     io::{BufRead, BufReader},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::Path,
@@ -53,6 +54,16 @@ pub enum Kind {
     Deny,
     #[default]
     None,
+}
+
+impl Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Kind::Allow => "Allow",
+            Kind::Deny => "Deny",
+            Kind::None => "None",
+        })
+    }
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]

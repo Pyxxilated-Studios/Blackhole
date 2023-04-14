@@ -76,6 +76,11 @@ impl Statistic {
                         .get_or_create(&metrics::Request {
                             client: request.client.clone(),
                             question: request.question.clone(),
+                            r#type: request.query_type.to_string(),
+                            rule: request
+                                .rule
+                                .as_ref()
+                                .map_or(String::from("None"), |rule| rule.kind.to_string()),
                         })
                         .inc();
 
@@ -101,6 +106,11 @@ impl Statistic {
                             .get_or_create(&metrics::Request {
                                 client: request.client.clone(),
                                 question: request.question.clone(),
+                                r#type: request.query_type.to_string(),
+                                rule: request
+                                    .rule
+                                    .as_ref()
+                                    .map_or(String::from("None"), |rule| rule.kind.to_string()),
                             })
                             .inc();
                     }
