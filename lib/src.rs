@@ -85,6 +85,7 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
         Config::save().await.unwrap_or_else(|err| {
             error!("{err}");
         });
+
         drop(shutdown_signal);
     }))
 }

@@ -294,7 +294,7 @@ impl<'a> Rules<'a> {
 
         reader
             .lines()
-            .filter_map(Result::ok)
+            .map_while(Result::ok)
             .par_bridge()
             .try_fold(
                 || Vec::with_capacity(1024 * 8),
