@@ -156,7 +156,7 @@ pub struct Rules<'a> {
 
 #[cfg(debug_assertions)]
 type ParserResult<'a> =
-    impl Parser<'a, &'a str, Vec<Option<Type>>, extra::Err<chumsky::prelude::Rich<'a, &'a str>>>;
+    impl Parser<'a, &'a str, Vec<Option<Type>>, extra::Err<chumsky::prelude::Rich<'a, char>>>;
 
 #[cfg(not(debug_assertions))]
 type ParserResult<'a> =
@@ -214,32 +214,29 @@ impl<'a> Rules<'a> {
             (h16.then(just(':')).repeated().at_most(2).then(h16))
                 .or_not()
                 .then(just("::"))
-                .then(h16.then(just(':')).repeated_exactly::<2>())
+                .then(h16.then(just(':')).repeated().exactly(2))
                 .then(ls32)
                 .slice(),
             // [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
             ((h16.then(just(':'))).or_not().then(h16))
                 .or_not()
                 .then(just("::"))
-                .then(h16.then(just(':')).repeated_exactly::<3>())
+                .then(h16.then(just(':')).repeated().exactly(3))
                 .then(ls32)
                 .slice(),
             // [ h16 ] "::" 4( h16 ":" ) ls32
             h16.or_not()
                 .then(just("::"))
-                .then(h16.then(just(':')).repeated_exactly::<4>())
+                .then(h16.then(just(':')).repeated().exactly(4))
                 .then(ls32)
                 .slice(),
             // "::" 5( h16 ":" ) ls32
             just("::")
-                .then(h16.then(just(':')).repeated_exactly::<5>())
+                .then(h16.then(just(':')).repeated().exactly(5))
                 .then(ls32)
                 .slice(),
             // 6( h16 ":" ) ls32
-            h16.then(just(':'))
-                .repeated_exactly::<6>()
-                .then(ls32)
-                .slice(),
+            h16.then(just(':')).repeated().exactly(6).then(ls32).slice(),
             // h16 "::" h16
             // For some reason this isn't handled by any of the above
             // TODO: Make this redundant
