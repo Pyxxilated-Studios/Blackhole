@@ -24,7 +24,7 @@ harness = false
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
 async-trait = "0.1"
-chumsky = "=1.0.0-alpha.0"
+chumsky = "=1.0.0-alpha.3"
 clap = { version = "4", default-features = false, features = [
     "derive",
     "help",
