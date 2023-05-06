@@ -9,7 +9,8 @@ RUN yarn install --network-timeout 600000
 COPY ./client .
 RUN yarn build
 
-FROM rust:1-alpine as server
+FROM rust:1-alpine as chef
+WORKDIR /blackhole
 
 RUN apk add musl-dev pkgconfig git clang mold
 RUN rustup set profile minimal
@@ -20,22 +21,17 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_UNSTABLE_SPARSE_REGISTRY=true
 ENV CARGO_INCREMENTAL=0
 
-RUN USER=root cargo new --bin blackhole
-WORKDIR /blackhole
+RUN cargo install cargo-chef
 
-# Generate cached dependencies
-COPY ./Cargo.lock ./Cargo.lock
-COPY ./Cargo.toml ./Cargo.toml
-RUN mkdir lib benches
-RUN touch lib/src.rs benches/benchmarks.rs
-RUN cargo build --bin blackhole --release
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Now build the actual server
-RUN rm src/*.rs lib/*.rs
-RUN find target/release -maxdepth 1 -type f -delete
-COPY ./src ./src
-COPY ./lib ./lib
-RUN touch src/main.rs lib/src.rs
+FROM chef as server
+COPY --from=planner /blackhole/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+COPY . .
 RUN cargo build --release
 
 FROM oven/bun
