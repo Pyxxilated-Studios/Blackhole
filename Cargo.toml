@@ -33,7 +33,7 @@ clap = { version = "4", default-features = false, features = [
 futures = "0.3"
 humantime-serde = "1"
 lru-cache = "0.1"
-prometheus-client = "0.21.0"
+prometheus-client = "0.21.1"
 rayon = "1"
 regex = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
