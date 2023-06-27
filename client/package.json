@@ -27,7 +27,7 @@
         "postcss-csso": "^6",
         "prettier": "^2",
         "prettier-plugin-svelte": "^2",
-        "svelte": "^3.59.1",
+        "svelte": "^3.59.2",
         "svelte-adapter-bun": "^0.4",
         "svelte-check": "^3",
         "svelte-preprocess": "^5",
