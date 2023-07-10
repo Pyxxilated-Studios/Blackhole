@@ -26,15 +26,15 @@ impl Sched {
     #[instrument]
     async fn run(&self) {
         match self {
-            Sched::Filters => {
+            Self::Filters => {
                 Filter::reset(None).await;
             }
-            Sched::Logs => {
+            Self::Logs => {
                 let schedule = Config::get(|config| {
                     config
                         .schedules
                         .iter()
-                        .find(|sched| sched.name == Sched::Logs)
+                        .find(|sched| sched.name == Self::Logs)
                         .map(|sched| sched.schedule)
                 })
                 .await
@@ -44,9 +44,11 @@ impl Sched {
 
                 Statistics::modify(statistics::REQUESTS, |statistics| {
                     if let statistics::Statistic::Requests(requests) = statistics {
-                        requests.retain(|request| match request.timestamp.duration_since(cutoff) {
-                            Ok(diff) => diff.is_zero(),
-                            Err(_) => true,
+                        requests.retain(|request| {
+                            request
+                                .timestamp
+                                .duration_since(cutoff)
+                                .map_or(true, |diff| diff.is_zero())
                         });
                     }
                 });
@@ -57,15 +59,15 @@ impl Sched {
     async fn init(&self) {
         debug!("Running Sched init");
         match self {
-            Sched::Filters => {
+            Self::Filters => {
                 Filter::init().await;
             }
-            Sched::Logs => {}
+            Self::Logs => {}
         }
     }
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(PartialEq))]
+#[cfg_attr(any(debug_assertions, test), derive(PartialEq, Eq))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Schedule {
     pub name: Sched,

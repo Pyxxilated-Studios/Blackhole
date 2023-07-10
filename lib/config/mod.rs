@@ -42,7 +42,7 @@ fn default_path() -> String {
     String::from("/config/config.toml")
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Eq))]
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(default = "default_port")]
@@ -109,7 +109,7 @@ impl Config {
     /// This can fail if the configuration profile fails to load,
     /// see [`Load`]
     ///
-    pub async fn load<C: Load + 'static>(loader: &C) -> Result<(), Error> {
+    pub async fn load<C: Load + 'static + Send + Sync>(loader: &C) -> Result<(), Error> {
         let mut config = CONFIG.write().await;
         loader.load(&mut config).await?;
 
@@ -145,7 +145,7 @@ impl Config {
     ///
     pub async fn get<F, T>(func: F) -> T
     where
-        F: Fn(&Config) -> T,
+        F: Fn(&Self) -> T + Send + Sync,
     {
         func(&*CONFIG.read().await)
     }
@@ -160,12 +160,12 @@ impl Config {
     ///
     pub async fn set<F>(func: F) -> Result<(), Error>
     where
-        F: Fn(&mut Config),
+        F: Fn(&mut Self) + Send + Sync,
     {
         let old_config = CONFIG.read().await.clone();
         func(&mut *CONFIG.write().await);
         if let Err(err) = Self::save().await {
-            error!("{err:?}");
+            error!("{err}");
             *CONFIG.write().await = old_config;
             match Self::save().await {
                 Ok(_) => Err(err),

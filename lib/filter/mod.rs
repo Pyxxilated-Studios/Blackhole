@@ -76,7 +76,7 @@ pub enum Error {
 
 impl From<ureq::Error> for Error {
     fn from(value: ureq::Error) -> Self {
-        Error::RequestError(Box::new(value))
+        Self::RequestError(Box::new(value))
     }
 }
 
@@ -84,7 +84,7 @@ impl<'a> Filter<'a> {
     pub async fn init() {
         Self::update().await;
         if let Err(err) = Self::import().await {
-            error!("{err:#?}");
+            error!("{err}");
         }
     }
 
@@ -189,8 +189,7 @@ impl<'a> Filter<'a> {
             }
         }
 
-        let mut filter = FILTER.write().await;
-        filter.lists.insert(list);
+        FILTER.write().await.lists.insert(list);
 
         Ok(())
     }
@@ -253,7 +252,7 @@ impl<'a> Filter<'a> {
 
         Self::update().await;
         if let Err(err) = Self::import().await {
-            error!("{err:#?}");
+            error!("{err}");
         }
     }
 

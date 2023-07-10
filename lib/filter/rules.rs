@@ -26,7 +26,7 @@ use super::Error;
 const DOMAIN_CHARS: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_*";
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Serialize, PartialEq, PartialOrd, Deserialize)]
+#[derive(Clone, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
 pub struct Rewrite {
     pub v4: IpAddr,
     pub v6: IpAddr,
@@ -34,7 +34,7 @@ pub struct Rewrite {
 
 impl Default for Rewrite {
     fn default() -> Self {
-        Rewrite {
+        Self {
             v4: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             v6: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
         }
@@ -42,13 +42,13 @@ impl Default for Rewrite {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
+#[derive(Clone, Default, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
 pub(crate) struct Action {
     pub rewrite: Option<Rewrite>,
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
+#[derive(Clone, Default, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
 pub enum Kind {
     Allow,
     Deny,
@@ -59,9 +59,9 @@ pub enum Kind {
 impl Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Kind::Allow => "Allow",
-            Kind::Deny => "Deny",
-            Kind::None => "None",
+            Self::Allow => "Allow",
+            Self::Deny => "Deny",
+            Self::None => "None",
         })
     }
 }
@@ -76,7 +76,7 @@ pub enum Type {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, PartialOrd, Deserialize)]
+#[derive(Clone, Default, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
 pub struct Rule {
     pub(crate) domain: String,
     pub(crate) kind: Kind,

@@ -23,13 +23,13 @@ pub const AVERAGE_REQUEST_TIME: &str = "average";
 pub const CACHE: &str = "cache";
 
 impl Statistic {
-    fn record(self, stats: &mut AHashMap<&'static str, Statistic>) {
+    fn record(self, stats: &mut AHashMap<&'static str, Self>) {
         match self {
-            Statistic::Cache(cache) => match stats
+            Self::Cache(cache) => match stats
                 .entry(CACHE)
-                .or_insert_with(|| Statistic::Cache(Cache::default()))
+                .or_insert_with(|| Self::Cache(Cache::default()))
             {
-                Statistic::Cache(exists) => {
+                Self::Cache(exists) => {
                     metrics::CACHE
                         .get_or_create(&metrics::Cache {
                             hit: (cache.hits > 0).to_string(),
@@ -42,21 +42,19 @@ impl Statistic {
                 }
                 _ => unreachable!(),
             },
-            Statistic::Count(count) => match stats
-                .entry(AVERAGE_REQUEST_TIME)
-                .or_insert(Statistic::Count(0))
+            Self::Count(count) => match stats.entry(AVERAGE_REQUEST_TIME).or_insert(Self::Count(0))
             {
-                Statistic::Count(c) => {
+                Self::Count(c) => {
                     *c += count;
                 }
                 _ => unreachable!(),
             },
-            Statistic::Average(average) => {
+            Self::Average(average) => {
                 match stats
                     .entry(AVERAGE_REQUEST_TIME)
-                    .or_insert_with(|| Statistic::Average(Average::default()))
+                    .or_insert_with(|| Self::Average(Average::default()))
                 {
-                    Statistic::Average(av) => {
+                    Self::Average(av) => {
                         let count = av.count + average.count;
                         av.average =
                             (av.average * av.count + average.count * average.average) / count;
@@ -67,11 +65,11 @@ impl Statistic {
                     _ => unreachable!(),
                 }
             }
-            Statistic::Request(request) => match stats
+            Self::Request(request) => match stats
                 .entry(REQUESTS)
-                .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
+                .or_insert_with(|| Self::Requests(Vec::with_capacity(128)))
             {
-                Statistic::Requests(r) => {
+                Self::Requests(r) => {
                     metrics::REQUESTS
                         .get_or_create(&metrics::Request {
                             client: request.client.clone(),
@@ -80,7 +78,7 @@ impl Statistic {
                             rule: request
                                 .rule
                                 .as_ref()
-                                .map_or(String::from("None"), |rule| rule.kind.to_string()),
+                                .map_or_else(|| String::from("None"), |rule| rule.kind.to_string()),
                         })
                         .inc();
 
@@ -96,25 +94,25 @@ impl Statistic {
                 }
                 _ => unreachable!(),
             },
-            Statistic::Requests(requests) => match stats
+            Self::Requests(requests) => match stats
                 .entry(REQUESTS)
-                .or_insert_with(|| Statistic::Requests(Vec::with_capacity(128)))
+                .or_insert_with(|| Self::Requests(Vec::with_capacity(128)))
             {
-                Statistic::Requests(r) => {
+                Self::Requests(r) => {
                     for request in &requests {
                         metrics::REQUESTS
                             .get_or_create(&metrics::Request {
                                 client: request.client.clone(),
                                 question: request.question.clone(),
                                 r#type: request.query_type.to_string(),
-                                rule: request
-                                    .rule
-                                    .as_ref()
-                                    .map_or(String::from("None"), |rule| rule.kind.to_string()),
+                                rule: request.rule.as_ref().map_or_else(
+                                    || String::from("None"),
+                                    |rule| rule.kind.to_string(),
+                                ),
                             })
                             .inc();
                     }
-                    r.extend(requests.into_iter());
+                    r.extend(requests);
                 }
                 _ => unreachable!(),
             },
@@ -122,14 +120,14 @@ impl Statistic {
     }
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Eq, Deserialize))]
 #[derive(Serialize, Clone, Default)]
 pub struct Average {
     pub count: usize,
     pub average: usize,
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Eq, Deserialize))]
 #[derive(Serialize, Clone, Default)]
 pub struct Cache {
     pub size: usize,
@@ -137,7 +135,7 @@ pub struct Cache {
     pub misses: usize,
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Eq))]
 #[derive(Serialize, Clone, Deserialize)]
 pub struct Request {
     pub client: String,
@@ -151,7 +149,7 @@ pub struct Request {
     pub cached: bool,
 }
 
-#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Deserialize))]
+#[cfg_attr(any(debug_assertions, test), derive(Debug, PartialEq, Eq, Deserialize))]
 #[derive(Serialize, Clone)]
 pub enum Statistic {
     Count(usize),
@@ -167,7 +165,7 @@ pub struct Statistics {
 
 impl Default for Statistics {
     fn default() -> Self {
-        Statistics {
+        Self {
             statistics: AHashMap::with_capacity(1024),
         }
     }

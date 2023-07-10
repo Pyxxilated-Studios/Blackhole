@@ -44,7 +44,9 @@ impl Cache {
                 .get_mut(&request.query().original().name().to_string())
                 .and_then(|entry| entry.get(&request.query().query_type()))
                 .cloned()
-        }) else { return None };
+        }) else {
+            return None;
+        };
 
         let now = Instant::now();
 
@@ -58,7 +60,7 @@ impl Cache {
             response
                 .answers_mut()
                 .iter_mut()
-                .zip(expires.into_iter())
+                .zip(expires)
                 .for_each(|(answer, expire)| {
                     answer
                         .set_ttl(u32::try_from((expire - now).as_secs()).expect("Invalid expiry"));

@@ -16,7 +16,7 @@ on:
 
 jobs:
   analyze-clippy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
@@ -50,7 +50,7 @@ jobs:
           wait-for-processing: true
 
   test-server:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
