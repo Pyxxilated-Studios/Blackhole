@@ -115,7 +115,7 @@ impl Server {
         match Config::set(|config| *config = body.clone()).await {
             Ok(_) => Ok(Box::new(Response::builder().body(""))),
             Err(err) => {
-                error!("{err:?}");
+                error!("{err}");
                 Ok(Box::new(Response::builder().status(500).body("")))
             }
         }

@@ -33,7 +33,7 @@ use crate::{
     statistics::{self, Average, Statistics},
 };
 
-fn default_port() -> u16 {
+const fn default_port() -> u16 {
     53
 }
 
@@ -50,11 +50,11 @@ impl FromStr for Upstream {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.split_once(':') {
-            Some((ip, port)) => Ok(Upstream {
+            Some((ip, port)) => Ok(Self {
                 ip: ip.parse().map_err(|e| format!("{e}"))?,
                 port: port.parse().map_err(|_| "invalid port".to_string())?,
             }),
-            None => Ok(Upstream {
+            None => Ok(Self {
                 ip: value.parse().map_err(|e| format!("{e}"))?,
                 port: default_port(),
             }),
@@ -148,7 +148,7 @@ impl Server {
                     }
                     _ => builder.error_msg(request.header(), ResponseCode::ServFail),
                 };
-                error!("{:#?}", err);
+                error!("{err}");
                 response_handle.send_response(response).await
             }
         }
@@ -181,10 +181,10 @@ impl RequestHandler for Server {
             self.forward(request).await
         };
 
-        let response = Server::create_response(&mut stat, request, &mut response, response_handle)
+        let response = Self::create_response(&mut stat, request, &mut response, response_handle)
             .await
             .unwrap_or_else(|err| {
-                error!("{:#?}", err);
+                error!("{err}");
                 (*request.header()).into()
             });
 
