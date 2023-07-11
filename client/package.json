@@ -16,7 +16,7 @@
         "@fullhuman/postcss-purgecss": "^5",
         "@sveltejs/kit": "^1.22.1",
         "@tailwindcss/typography": "^0.5",
-        "@typescript-eslint/eslint-plugin": "^5.60.0",
+        "@typescript-eslint/eslint-plugin": "^5.62.0",
         "@typescript-eslint/parser": "^5.62.0",
         "autoprefixer": "^10",
         "daisyui": "^3",
