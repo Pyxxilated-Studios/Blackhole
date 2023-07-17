@@ -1719,9 +1719,9 @@ svelte-adapter-bun@^0.4:
     tiny-glob "^0.2.9"
 
 svelte-check@^3:
-  version "3.4.5"
-  resolved "https://registry.yarnpkg.com/svelte-check/-/svelte-check-3.4.5.tgz#06c7c3ed0c7ef24791791f2be28319d8fc7c5a34"
-  integrity sha512-FsD/CUVdEI0F9sfylh1Fe15kDjvvbyBxzDpACPsdq0EASgaZukBXaMXofpxlgmWsgVET3OynMQlbtUQoWCz9Rw==
+  version "3.4.6"
+  resolved "https://registry.yarnpkg.com/svelte-check/-/svelte-check-3.4.6.tgz#d43de724ad89d1198c96770e9d23965d3379ad44"
+  integrity sha512-OBlY8866Zh1zHQTkBMPS6psPi7o2umTUyj6JWm4SacnIHXpWFm658pG32m3dKvKFL49V4ntAkfFHKo4ztH07og==
   dependencies:
     "@jridgewell/trace-mapping" "^0.3.17"
     chokidar "^3.4.1"
@@ -1729,7 +1729,7 @@ svelte-check@^3:
     import-fresh "^3.2.1"
     picocolors "^1.0.0"
     sade "^1.7.4"
-    svelte-preprocess "^5.0.3"
+    svelte-preprocess "^5.0.4"
     typescript "^5.0.3"
 
 svelte-frappe-charts@^1:
@@ -1755,7 +1755,7 @@ svelte-notifications@^0.9.98:
   resolved "https://registry.yarnpkg.com/svelte-notifications/-/svelte-notifications-0.9.98.tgz#9c627bd363d89a347d11269bdf70f88b07302a0a"
   integrity sha512-w7/sqnQtEjM5uzjb3HfB50RE6KMuuWEQZxfBw86IykslHFJRcTuRvaUv503UMqY/LaioOu6w9mjJTO+ejiReSQ==
 
-svelte-preprocess@^5, svelte-preprocess@^5.0.3:
+svelte-preprocess@^5, svelte-preprocess@^5.0.4:
   version "5.0.4"
   resolved "https://registry.yarnpkg.com/svelte-preprocess/-/svelte-preprocess-5.0.4.tgz#2123898e079a074f7f4ef1799e10e037f5bcc55b"
   integrity sha512-ABia2QegosxOGsVlsSBJvoWeXy1wUKSfF7SWJdTjLAbx/Y3SrVevvvbFNQqrSJw89+lNSsM58SipmZJ5SRi5iw==
