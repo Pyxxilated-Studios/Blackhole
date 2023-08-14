@@ -20,7 +20,7 @@
         "@typescript-eslint/parser": "^5.62.0",
         "autoprefixer": "^10",
         "daisyui": "^3",
-        "eslint": "^8.46.0",
+        "eslint": "^8.47.0",
         "eslint-config-prettier": "^9",
         "eslint-plugin-svelte3": "^4",
         "postcss": "^8",
