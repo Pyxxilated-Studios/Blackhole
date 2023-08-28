@@ -14,7 +14,7 @@
     "devDependencies": {
         "@catppuccin/tailwindcss": "^0.1.6",
         "@fullhuman/postcss-purgecss": "^5",
-        "@sveltejs/kit": "^1.22.6",
+        "@sveltejs/kit": "^1.23.0",
         "@tailwindcss/typography": "^0.5",
         "@typescript-eslint/eslint-plugin": "^5.62.0",
         "@typescript-eslint/parser": "^5.62.0",
