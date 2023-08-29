@@ -57,19 +57,19 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "parking_lot",
     "tracing-log",
 ] }
-trust-dns-proto = { version = "0.22", default-features = false, features = [
+trust-dns-proto = { version = "0.23", default-features = false, features = [
     "dns-over-https-rustls",
     "dns-over-rustls",
     "dnssec-ring",
     "serde-config",
 ] }
-trust-dns-resolver = { version = "0.22", default-features = false, features = [
+trust-dns-resolver = { version = "0.23", default-features = false, features = [
     "dns-over-https-rustls",
     "dns-over-rustls",
     "dnssec-ring",
     "serde-config",
 ] }
-trust-dns-server = { version = "0.22", default-features = false, features = [
+trust-dns-server = { version = "0.23", default-features = false, features = [
     "dns-over-https-rustls",
     "dns-over-rustls",
     "dnssec-ring",
