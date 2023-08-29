@@ -8,6 +8,10 @@ updates:
     labels:
       - "server"
       - "dependencies"
+    groups:
+      server-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/client"
@@ -17,6 +21,10 @@ updates:
       - "client"
       - "dependencies"
     open-pull-requests-limit: 10
+    groups:
+      client-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
