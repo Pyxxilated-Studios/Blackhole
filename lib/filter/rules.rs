@@ -16,7 +16,10 @@ use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
 use serde::{Deserialize, Serialize};
 use trust_dns_proto::{
     op::{Message, MessageType, ResponseCode},
-    rr::{RData, Record, RecordType},
+    rr::{
+        rdata::{A, AAAA},
+        RData, Record, RecordType,
+    },
     xfer::DnsResponse,
 };
 use trust_dns_server::server::Request;
@@ -98,8 +101,8 @@ impl Rule {
                             .unwrap_or_default()
                             .v4
                         {
-                            IpAddr::V4(addr) => addr,
-                            IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
+                            IpAddr::V4(addr) => A(addr),
+                            IpAddr::V6(_) => A(Ipv4Addr::UNSPECIFIED),
                         },
                     )))
                     .set_ttl(600)
@@ -117,8 +120,8 @@ impl Rule {
                             .unwrap_or_default()
                             .v6
                         {
-                            IpAddr::V4(_) => Ipv6Addr::UNSPECIFIED,
-                            IpAddr::V6(addr) => addr,
+                            IpAddr::V4(_) => AAAA(Ipv6Addr::UNSPECIFIED),
+                            IpAddr::V6(addr) => AAAA(addr),
                         },
                     )))
                     .set_ttl(600)
@@ -131,19 +134,21 @@ impl Rule {
     pub fn apply(&self, request: &Request) -> DnsResponse {
         let answers = self.rule(request);
 
-        Message::new()
-            .set_header(
-                *request
-                    .header()
-                    .clone()
-                    .set_answer_count(answers.len().try_into().unwrap_or_default())
-                    .set_message_type(MessageType::Response)
-                    .set_response_code(ResponseCode::NoError),
-            )
-            .add_answers(answers)
-            .add_query(request.query().original().clone())
-            .clone()
-            .into()
+        DnsResponse::from_message(
+            Message::new()
+                .set_header(
+                    *request
+                        .header()
+                        .clone()
+                        .set_answer_count(answers.len().try_into().unwrap_or_default())
+                        .set_message_type(MessageType::Response)
+                        .set_response_code(ResponseCode::NoError),
+                )
+                .add_answers(answers)
+                .add_query(request.query().original().clone())
+                .clone(),
+        )
+        .unwrap()
     }
 }
 

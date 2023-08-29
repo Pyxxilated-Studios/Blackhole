@@ -8,7 +8,9 @@ use std::{
     time::Duration,
 };
 
-use dns::server::Server;
+use config::Config;
+use dns::Server;
+use schedule::Scheduler;
 use tokio::{
     net::{TcpListener, UdpSocket},
     sync::watch::Receiver,
@@ -16,8 +18,6 @@ use tokio::{
 };
 use tracing::{error, info};
 use trust_dns_server::ServerFuture;
-
-use crate::config::Config;
 
 pub mod api;
 pub mod cache;
@@ -36,14 +36,13 @@ pub mod statistics;
 ///
 #[no_coverage]
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
-    let port = config::Config::get(|config| config.port).await;
+    let port = Config::get(|config| config.port).await;
 
     metrics::init();
 
     let scheduler = tokio::spawn({
         async move {
-            schedule::Scheduler::init(config::Config::get(|config| config.schedules.clone()).await)
-                .await;
+            Scheduler::init(Config::get(|config| config.schedules.clone()).await).await;
         }
     });
 
@@ -51,18 +50,17 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
         let address = (IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
         let mut server = ServerFuture::new(Server {});
         server.register_socket(UdpSocket::bind(address).await?);
-        server.register_listener(
-            TcpListener::bind((IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)).await?,
-            Duration::from_secs(30),
-        );
+        server.register_listener(TcpListener::bind(address).await?, Duration::from_secs(30));
 
         info!(
-            "Running DNS server on {:#?}",
+            "Running DNS server on {:?}",
             address
-                .to_socket_addrs()
-                .expect("Unable to parse Server Address")
+                .to_socket_addrs()?
                 .next()
-                .expect("Unable to parse Server Address")
+                .ok_or_else(|| io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    "Invalid DNS Server Address"
+                ))?
         );
 
         tokio::spawn(async move {

@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
 
 use crate::{
-    dns::server::Upstream,
+    dns::Upstream,
     filter::{self, Filter, List},
     schedule::Schedule,
 };
@@ -168,7 +168,7 @@ impl Config {
             error!("{err}");
             *CONFIG.write().await = old_config;
             match Self::save().await {
-                Ok(_) => Err(err),
+                Ok(()) => Err(err),
                 Err(e) => Err(e),
             }
         } else {

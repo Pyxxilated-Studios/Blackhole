@@ -36,17 +36,13 @@ impl Cache {
     /// records does not have a TTL (e.g. [`OPT`])
     ///
     pub async fn get(request: &Request) -> Option<DnsResponse> {
-        let Some((mut response, expires)) = ({
-            let mut cache = CACHE.write().await;
+        let mut cache = CACHE.write().await;
+        let (ref mut response, expires) = cache
+            .cache
+            .get_mut(&request.query().original().name().to_string())
+            .and_then(|entry| entry.get_mut(&request.query().query_type()))?;
 
-            cache
-                .cache
-                .get_mut(&request.query().original().name().to_string())
-                .and_then(|entry| entry.get(&request.query().query_type()))
-                .cloned()
-        }) else {
-            return None;
-        };
+        let mut resp = response.clone().into_message();
 
         let now = Instant::now();
 
@@ -57,16 +53,15 @@ impl Cache {
                 size: 0,
             }));
 
-            response
-                .answers_mut()
+            resp.answers_mut()
                 .iter_mut()
                 .zip(expires)
                 .for_each(|(answer, expire)| {
                     answer
-                        .set_ttl(u32::try_from((expire - now).as_secs()).expect("Invalid expiry"));
+                        .set_ttl(u32::try_from((*expire - now).as_secs()).expect("Invalid expiry"));
                 });
 
-            response
+            response.clone()
         })
     }
 

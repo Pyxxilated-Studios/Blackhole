@@ -37,6 +37,10 @@
                 port: Number.parseInt(port.toString()),
             }));
 
+            config.filter = config.filter.filter((filter) => {
+                filter.name !== "" && filter.url !== "";
+            });
+
             let response = await fetch("/api/config", {
                 method: "POST",
                 body: JSON.stringify(config),
@@ -119,6 +123,20 @@
             </tbody>
         </table>
     </div>
+
+    <button
+        class="btn float-right"
+        on:click={() => {
+            config.filter = [
+                ...config.filter,
+                {
+                    name: "",
+                    url: "",
+                    enabled: true,
+                },
+            ];
+        }}>Add Filter</button
+    >
 
     <h3>Upstreams</h3>
 

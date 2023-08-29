@@ -30,6 +30,7 @@ static REPLACEMENT: LazyLock<Regex> =
 pub struct List {
     pub name: String,
     pub url: String,
+    pub enabled: bool,
     #[serde(skip)]
     pub entries: usize,
 }
@@ -93,12 +94,16 @@ impl<'a> Filter<'a> {
         let tasks = Config::get(|config| config.filters.clone())
             .await
             .into_iter()
-            .map(|filter| {
-                tokio::spawn(async move {
-                    if let Err(err) = Self::download(filter).await {
-                        error!("{err}");
-                    }
-                })
+            .filter_map(|filter| {
+                if filter.enabled {
+                    Some(tokio::spawn(async move {
+                        if let Err(err) = Self::download(filter).await {
+                            error!("{err}");
+                        }
+                    }))
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>();
 
@@ -211,14 +216,14 @@ impl<'a> Filter<'a> {
                 .iter()
                 .cloned()
                 .try_fold(Rules::default(), |mut rules, mut list| {
-                    info!("loading filter list: {}", list.name);
+                    info!("Loading filter list: {}", list.name);
 
                     rules.merge(Rules::try_from(&mut list)?);
                     count += list.entries;
 
                     info!("Loaded {} filter(s) for {}", list.entries, list.name);
 
-                    Ok::<Rules, Error>(rules)
+                    Ok::<_, Error>(rules)
                 })?
         };
 
