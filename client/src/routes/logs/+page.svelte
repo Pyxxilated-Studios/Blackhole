@@ -75,7 +75,7 @@
                     {#if idx == shownRequests.length - 1}
                         <tr
                             use:inview
-                            on:inview_enter={(_) => {
+                            on:inview_enter={() => {
                                 count += 25;
                             }}
                         >

@@ -39,15 +39,14 @@ fn config() -> BoxedFilter<(impl Reply,)> {
                     reason: String,
                 }
 
-                if let Some(err) = err.find::<BodyDeserializeError>() {
-                    Ok(Box::new(
+                match err.find::<BodyDeserializeError>() {
+                    Some(err) => Ok(Box::new(
                         json(&Error {
                             reason: err.to_string(),
                         })
                         .into_response(),
-                    ))
-                } else {
-                    Err(err)
+                    )),
+                    None => Err(err),
                 }
             }))
         .boxed()
@@ -113,7 +112,7 @@ impl Server {
         }
 
         match Config::set(|config| *config = body.clone()).await {
-            Ok(_) => Ok(Box::new(Response::builder().body(""))),
+            Ok(()) => Ok(Box::new(Response::builder().body(""))),
             Err(err) => {
                 error!("{err}");
                 Ok(Box::new(Response::builder().status(500).body("")))
