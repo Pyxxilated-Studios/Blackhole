@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(ip, no_coverage, lazy_cell, type_alias_impl_trait)]
+#![feature(coverage_attribute, ip, lazy_cell, type_alias_impl_trait)]
 
 use std::{
     io,
@@ -34,7 +34,7 @@ pub mod statistics;
 /// # Errors
 /// If there are issues during startup
 ///
-#[no_coverage]
+#[coverage(off)]
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
     let port = Config::get(|config| config.port).await;
 
