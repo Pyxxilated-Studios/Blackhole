@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(async_fn_in_trait, no_coverage)]
+#![feature(async_fn_in_trait, coverage_attribute)]
 
 use std::{path::PathBuf, time::Duration};
 
@@ -16,7 +16,7 @@ use tracing_subscriber::{
 
 mod cli;
 
-#[no_coverage]
+#[coverage(off)]
 fn enable_tracing() {
     let level = if let Ok(level) = std::env::var("LOG_LEVEL") {
         match level.to_ascii_lowercase().as_str() {
@@ -47,7 +47,7 @@ fn enable_tracing() {
         .init();
 }
 
-#[no_coverage]
+#[coverage(off)]
 #[tokio::main]
 async fn main() {
     enable_tracing();

@@ -70,7 +70,7 @@ fn metrics() -> BoxedFilter<(impl Reply,)> {
 }
 
 impl Server {
-    #[no_coverage]
+    #[coverage(off)]
     pub async fn run(self) {
         let api = warp::path("api").and(statistics().or(config()).or(metrics()));
 
