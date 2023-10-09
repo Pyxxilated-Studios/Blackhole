@@ -24,7 +24,7 @@ harness = false
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
 async-trait = "0.1"
-chumsky = "=1.0.0-alpha.4"
+chumsky = "=1.0.0-alpha.5"
 clap = { version = "4", default-features = false, features = [
     "derive",
     "help",
@@ -46,7 +46,7 @@ tokio = { version = "1", default-features = false, features = [
     "signal",
     "tracing",
 ] }
-toml = "0.8.1"
+toml = "0.8.2"
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",
     "std",
