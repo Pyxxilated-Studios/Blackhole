@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(async_fn_in_trait, coverage_attribute)]
+#![feature(coverage_attribute)]
 
 use std::{path::PathBuf, time::Duration};
 

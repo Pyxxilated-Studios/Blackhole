@@ -176,22 +176,22 @@ impl<'a> Rules<'a> {
         let eol = comment.ignored().or(text::newline()).or(end()).padded();
 
         let ipv4 = choice((
-            just('1').then(text::digits(10).exactly(2)).slice(),
+            just('1').then(text::digits(10).exactly(2)).to_slice(),
             just('2')
                 .then(just('5').then(text::digits(6).exactly(1)))
-                .slice(),
+                .to_slice(),
             just('2')
                 .then(text::digits(5).exactly(1))
                 .then(text::digits(10).exactly(1))
-                .slice(),
-            text::digits(10).at_least(1).at_most(2).slice(),
+                .to_slice(),
+            text::digits(10).at_least(1).at_most(2).to_slice(),
         ))
         .separated_by(just('.'))
         .exactly(4)
-        .slice();
+        .to_slice();
 
-        let h16 = text::digits(16).at_least(1).at_most(4).slice();
-        let ls32 = choice((h16.then(just(':')).then(h16).slice(), ipv4));
+        let h16 = text::digits(16).at_least(1).at_most(4).to_slice();
+        let ls32 = choice((h16.then(just(':')).then(h16).to_slice(), ipv4));
 
         let ipv6 = choice((
             // [ *6( h16 ":" ) h16 ] "::" h16
@@ -200,13 +200,13 @@ impl<'a> Rules<'a> {
                 .or_not()
                 .then(just("::"))
                 .then(h16)
-                .slice(),
+                .to_slice(),
             // [ *4( h16 ":" ) h16 ] "::" ls32
             (h16.then(just(':')).repeated().at_most(4).then(h16))
                 .or_not()
                 .then(just("::"))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // [ *3( h16 ":" ) h16 ] "::" h16 ":" ls32
             (h16.then(just(':')).repeated().at_most(3).then(h16))
                 .or_not()
@@ -214,38 +214,38 @@ impl<'a> Rules<'a> {
                 .then(h16)
                 .then(just(':'))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
             (h16.then(just(':')).repeated().at_most(2).then(h16))
                 .or_not()
                 .then(just("::"))
                 .then(h16.then(just(':')).repeated().exactly(2))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
             ((h16.then(just(':'))).or_not().then(h16))
                 .or_not()
                 .then(just("::"))
                 .then(h16.then(just(':')).repeated().exactly(3))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // [ h16 ] "::" 4( h16 ":" ) ls32
             h16.or_not()
                 .then(just("::"))
                 .then(h16.then(just(':')).repeated().exactly(4))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // "::" 5( h16 ":" ) ls32
             just("::")
                 .then(h16.then(just(':')).repeated().exactly(5))
                 .then(ls32)
-                .slice(),
+                .to_slice(),
             // 6( h16 ":" ) ls32
-            h16.then(just(':')).repeated().exactly(6).then(ls32).slice(),
+            h16.then(just(':')).repeated().exactly(6).then(ls32).to_slice(),
             // h16 "::" h16
             // For some reason this isn't handled by any of the above
             // TODO: Make this redundant
-            h16.then(just("::")).then(h16).slice(),
+            h16.then(just("::")).then(h16).to_slice(),
         ));
 
         let ip = choice((ipv4, ipv6))
@@ -257,7 +257,7 @@ impl<'a> Rules<'a> {
             .repeated()
             .at_least(1)
             .at_most(63)
-            .slice()
+            .to_slice()
             .separated_by(just('.'))
             .at_least(1)
             .collect::<Vec<_>>()
