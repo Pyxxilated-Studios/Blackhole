@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
-use trust_dns_server::{
+use hickory_proto::serialize::binary::{BinDecodable, BinDecoder};
+use hickory_server::{
     authority::MessageRequest,
     server::{Protocol, Request},
 };

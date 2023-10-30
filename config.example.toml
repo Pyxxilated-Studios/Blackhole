@@ -11,6 +11,7 @@ port = 53
 [[filter]]
 name = "Energized"
 url = "https://o0.pages.dev/mini/domains.txt"
+enabled = true
 
 [[schedule]]
 name = "Filters"

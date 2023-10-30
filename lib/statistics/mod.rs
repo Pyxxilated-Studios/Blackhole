@@ -7,9 +7,9 @@ use std::{
 };
 
 use ahash::AHashMap;
+use hickory_proto::rr::{Record, RecordType};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
-use trust_dns_proto::rr::{Record, RecordType};
 
 use crate::{
     filter::rules::{Kind, Rule},
