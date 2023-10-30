@@ -1,6 +1,12 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
-#![feature(coverage_attribute, ip, lazy_cell, type_alias_impl_trait)]
+#![feature(
+    coverage_attribute,
+    hash_set_entry,
+    ip,
+    lazy_cell,
+    type_alias_impl_trait
+)]
 
 use std::{
     io,
@@ -10,6 +16,7 @@ use std::{
 
 use config::Config;
 use dns::Server;
+use hickory_server::ServerFuture;
 use schedule::Scheduler;
 use tokio::{
     net::{TcpListener, UdpSocket},
@@ -17,7 +24,6 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{error, info};
-use trust_dns_server::ServerFuture;
 
 pub mod api;
 pub mod cache;
@@ -38,7 +44,7 @@ pub mod statistics;
 pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>, io::Error> {
     let port = Config::get(|config| config.port).await;
 
-    metrics::init();
+    metrics::init().map_err(|err| io::Error::new(io::ErrorKind::Interrupted, err.to_string()))?;
 
     let scheduler = tokio::spawn({
         async move {

@@ -12,9 +12,7 @@ use chumsky::{
     primitive::{any, choice, end, just, one_of},
     text, IterParser, Parser,
 };
-use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
-use serde::{Deserialize, Serialize};
-use trust_dns_proto::{
+use hickory_proto::{
     op::{Message, MessageType, ResponseCode},
     rr::{
         rdata::{A, AAAA},
@@ -22,7 +20,9 @@ use trust_dns_proto::{
     },
     xfer::DnsResponse,
 };
-use trust_dns_server::server::Request;
+use hickory_server::server::Request;
+use rayon::{iter::ParallelIterator, prelude::ParallelBridge};
+use serde::{Deserialize, Serialize};
 
 use super::Error;
 
@@ -79,7 +79,7 @@ pub enum Type {
 }
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
-#[derive(Clone, Default, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
+#[derive(Clone, Serialize, PartialEq, Eq, PartialOrd, Deserialize)]
 pub struct Rule {
     pub(crate) domain: String,
     pub(crate) kind: Kind,
@@ -134,21 +134,20 @@ impl Rule {
     pub fn apply(&self, request: &Request) -> DnsResponse {
         let answers = self.rule(request);
 
-        DnsResponse::from_message(
-            Message::new()
-                .set_header(
-                    *request
-                        .header()
-                        .clone()
-                        .set_answer_count(answers.len().try_into().unwrap_or_default())
-                        .set_message_type(MessageType::Response)
-                        .set_response_code(ResponseCode::NoError),
-                )
-                .add_answers(answers)
-                .add_query(request.query().original().clone())
-                .clone(),
-        )
-        .unwrap()
+        let message = Message::new()
+            .set_header(
+                *request
+                    .header()
+                    .clone()
+                    .set_answer_count(answers.len().try_into().unwrap_or_default())
+                    .set_message_type(MessageType::Response)
+                    .set_response_code(ResponseCode::NoError),
+            )
+            .add_answers(answers)
+            .add_query(request.query().original().clone())
+            .clone();
+
+        DnsResponse::new(message.clone(), message.to_vec().unwrap_or_default())
     }
 }
 
@@ -241,7 +240,11 @@ impl<'a> Rules<'a> {
                 .then(ls32)
                 .to_slice(),
             // 6( h16 ":" ) ls32
-            h16.then(just(':')).repeated().exactly(6).then(ls32).to_slice(),
+            h16.then(just(':'))
+                .repeated()
+                .exactly(6)
+                .then(ls32)
+                .to_slice(),
             // h16 "::" h16
             // For some reason this isn't handled by any of the above
             // TODO: Make this redundant
@@ -337,7 +340,7 @@ impl<'a> Rules<'a> {
             .fold(self, |current_node, part| {
                 current_node
                     .children
-                    .entry(Cow::Owned(part.to_string()))
+                    .entry(Cow::Owned(part.replace('*', ".*")))
                     .or_default()
             })
             .rule

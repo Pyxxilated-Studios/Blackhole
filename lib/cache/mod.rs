@@ -3,10 +3,10 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
+use hickory_proto::{rr::RecordType, xfer::DnsResponse};
+use hickory_server::server::Request;
 use lru_cache::LruCache;
 use tokio::sync::RwLock;
-use trust_dns_proto::{rr::RecordType, xfer::DnsResponse};
-use trust_dns_server::server::Request;
 
 use crate::statistics::{self, Statistic, Statistics};
 
@@ -36,11 +36,14 @@ impl Cache {
     /// records does not have a TTL (e.g. [`OPT`])
     ///
     pub async fn get(request: &Request) -> Option<DnsResponse> {
-        let mut cache = CACHE.write().await;
-        let (ref mut response, expires) = cache
-            .cache
-            .get_mut(&request.query().original().name().to_string())
-            .and_then(|entry| entry.get_mut(&request.query().query_type()))?;
+        let (ref response, expires) = {
+            let mut cache = CACHE.write().await;
+            cache
+                .cache
+                .get_mut(&request.query().original().name().to_string())
+                .and_then(|entry| entry.get_mut(&request.query().query_type()))?
+                .clone()
+        };
 
         let mut resp = response.clone().into_message();
 
@@ -58,7 +61,7 @@ impl Cache {
                 .zip(expires)
                 .for_each(|(answer, expire)| {
                     answer
-                        .set_ttl(u32::try_from((*expire - now).as_secs()).expect("Invalid expiry"));
+                        .set_ttl(u32::try_from((expire - now).as_secs()).expect("Invalid expiry"));
                 });
 
             response.clone()
@@ -71,24 +74,26 @@ impl Cache {
         let key = response.queries()[0].name().to_string();
         let sub_key = response.queries()[0].query_type();
 
+        let exists = cache
+            .cache
+            .get_mut(&key)
+            .map(|inner| inner.contains_key(&sub_key));
+
         Statistics::record(Statistic::Cache(statistics::Cache {
             hits: 0,
             misses: 1,
-            size: match cache
-                .cache
-                .get_mut(&key)
-                .map(|inner| inner.contains_key(&sub_key))
-            {
+            size: match exists {
                 Some(true) => 0,
                 Some(false) => size_of::<Entry>(),
                 None => key.capacity() + size_of::<Entry>(),
             },
         }));
 
+        let now = Instant::now();
         let value = response
             .answers()
             .iter()
-            .map(|answer| Instant::now() + Duration::from_secs(answer.ttl().into()))
+            .map(|answer| now + Duration::from_secs(answer.ttl().into()))
             .collect();
 
         if let Some(entry) = cache.cache.get_mut(&key) {

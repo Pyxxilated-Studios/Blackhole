@@ -8,12 +8,12 @@ use std::{
 };
 
 use ahash::AHashSet;
+use hickory_server::server::Request;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock, task::JoinError};
 use tracing::{error, info, instrument};
-use trust_dns_server::server::Request;
 
 use crate::{config::Config, metrics, schedule::Sched};
 
@@ -22,8 +22,6 @@ use self::rules::{Rule, Rules};
 pub mod rules;
 
 static FILTER: LazyLock<RwLock<Filter>> = LazyLock::new(RwLock::default);
-static REPLACEMENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new("\\\\*").expect("Failed to parse regex"));
 
 #[cfg_attr(any(debug_assertions, test), derive(Debug))]
 #[derive(Clone, Eq, Serialize, Deserialize)]
@@ -261,7 +259,7 @@ impl<'a> Filter<'a> {
         }
     }
 
-    pub fn filter(&self, request: &Request) -> Option<Rule> {
+    pub fn filter(&'a self, request: &'a Request) -> &'a Option<Rule> {
         request
             .query()
             .original()
@@ -275,16 +273,12 @@ impl<'a> Filter<'a> {
                         .children
                         .iter()
                         .filter(|(key, _)| key.contains('*'))
-                        .find(|(key, _)| {
-                            let re = REPLACEMENT.replace_all(key, ".*");
-                            let matcher = Regex::new(&re).expect("Failed to parse rule regex");
-                            matcher.is_match(&key_)
-                        })
-                        .map_or(current_node, |(_, entry)| entry)
+                        .filter_map(|(key, entry)| Regex::new(key).ok().map(|re| (entry, re)))
+                        .find(|(_, re)| re.is_match(&key_))
+                        .map_or(current_node, |(entry, _)| entry)
                 })
             })
             .map_or_else(|err| &err.rule, |rule| &rule.rule)
-            .clone()
     }
 
     ///
@@ -294,8 +288,8 @@ impl<'a> Filter<'a> {
     ///
     /// ```
     /// use blackhole::filter::Filter;
-    /// use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
-    /// use trust_dns_server::{
+    /// use hickory_proto::serialize::binary::{BinDecodable, BinDecoder};
+    /// use hickory_server::{
     ///    authority::MessageRequest,
     ///    server::{Protocol, Request},
     /// };
@@ -325,11 +319,18 @@ impl<'a> Filter<'a> {
         if request.query().query_type().is_ip_addr() {
             FILTER
                 .try_read()
-                .map(|filter| filter.filter(request))
+                .map(|filter| filter.filter(request).clone())
                 .unwrap_or_default()
         } else {
             None
         }
+    }
+
+    pub fn lists() -> Vec<List> {
+        FILTER
+            .try_read()
+            .map(|filters| filters.lists.clone().into_iter().collect())
+            .unwrap_or_default()
     }
 }
 
@@ -337,12 +338,12 @@ impl<'a> Filter<'a> {
 mod tests {
     use std::path::Path;
 
-    use pretty_assertions::assert_eq;
-    use trust_dns_proto::serialize::binary::{BinDecodable, BinDecoder};
-    use trust_dns_server::{
+    use hickory_proto::serialize::binary::{BinDecodable, BinDecoder};
+    use hickory_server::{
         authority::MessageRequest,
         server::{Protocol, Request},
     };
+    use pretty_assertions::assert_eq;
 
     use crate::filter::rules::{Kind, Rules};
 
@@ -381,7 +382,7 @@ mod tests {
         let rule = filter.filter(&request);
         assert!(rule.is_some());
 
-        let rule = rule.unwrap();
+        let rule = rule.clone().unwrap();
         assert_eq!(rule.kind, Kind::Deny);
     }
 
@@ -407,7 +408,7 @@ mod tests {
         let rule = filter.filter(&request);
         assert!(rule.is_some());
 
-        let rule = rule.unwrap();
+        let rule = rule.clone().unwrap();
         assert_eq!(rule.kind, Kind::Deny);
         assert_eq!(rule.domain, "*mail.com");
     }

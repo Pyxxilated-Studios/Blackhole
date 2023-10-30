@@ -1,4 +1,4 @@
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, PoisonError, RwLock, RwLockWriteGuard};
 
 use prometheus_client::{
     encoding::EncodeLabelSet,
@@ -34,8 +34,16 @@ pub static DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-pub fn init() {
-    let mut registry = REGISTRY.write().expect("Unable to init registry");
+///
+/// Initialise the metrics registry
+///
+/// # Errors
+/// This should essentially never error, as the only time it should is if the lock
+/// is held by the current thread. However, this should be virtually impossible as
+/// this is meant to only ever be called once
+///
+pub fn init() -> Result<(), PoisonError<RwLockWriteGuard<'static, Registry>>> {
+    let mut registry = REGISTRY.write()?;
 
     registry.register("blackhole_requests", "Number of requests", REQUESTS.clone());
     registry.register(
@@ -50,4 +58,6 @@ pub fn init() {
     );
     registry.register("blackhole_rules", "Number of rules", RULES.clone());
     registry.register("blackhole_cache", "Cache effectiveness", CACHE.clone());
+
+    Ok(())
 }

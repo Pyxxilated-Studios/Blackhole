@@ -9,7 +9,7 @@ use warp::{
     reply::json, Filter, Rejection, Reply,
 };
 
-use crate::{config::Config, metrics::REGISTRY, statistics::Statistics};
+use crate::{config::Config, filter, metrics::REGISTRY, statistics::Statistics};
 
 pub struct Server;
 
@@ -77,34 +77,31 @@ impl Server {
         warp::serve(api).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
     }
 
-    fn all() -> Box<(dyn warp::Reply + 'static)> {
-        Box::new(json(&Statistics::statistics()).into_response())
+    fn all() -> Response<warp::hyper::Body> {
+        json(&Statistics::statistics()).into_response()
     }
 
     fn statistics(
         statistic: &str,
         params: &AHashMap<String, String>,
-    ) -> Box<(dyn warp::Reply + 'static)> {
+    ) -> Response<warp::hyper::Body> {
         let from = params.get("from");
         let to = params.get("to");
 
         match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to) {
-            Some(statistics) => Box::new(json(&statistics).into_response()),
-            None => Box::new(
-                Response::builder()
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(String::from("{}")),
-            ),
+            Some(statistics) => json(&statistics).into_response(),
+            None => json(&AHashMap::<&str, String>::default()).into_response(),
         }
     }
 
-    async fn config() -> Result<Box<dyn warp::Reply>, warp::Rejection> {
-        let config = Config::get(Clone::clone).await;
+    async fn config() -> Result<Response<warp::hyper::Body>, warp::Rejection> {
+        let mut config = Config::get(Clone::clone).await;
+        config.filters = filter::Filter::lists();
 
-        Ok(Box::new(json(&config).into_response()))
+        Ok(json(&config).into_response())
     }
 
-    async fn update_config(body: Config) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
+    async fn update_config(body: Config) -> Result<Response<String>, warp::Rejection> {
         #[cfg(debug_assertions)]
         {
             use tracing::debug;
@@ -112,10 +109,13 @@ impl Server {
         }
 
         match Config::set(|config| *config = body.clone()).await {
-            Ok(()) => Ok(Box::new(Response::builder().body(""))),
+            Ok(()) => Ok(Response::builder().body(String::default()).unwrap()),
             Err(err) => {
                 error!("{err}");
-                Ok(Box::new(Response::builder().status(500).body("")))
+                Ok(Response::builder()
+                    .status(500)
+                    .body(err.to_string())
+                    .unwrap())
             }
         }
     }

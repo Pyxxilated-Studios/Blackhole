@@ -4,14 +4,12 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use serde::{Deserialize, Serialize};
-use tracing::error;
-use trust_dns_proto::{
+use hickory_proto::{
     op::{Message, MessageType, ResponseCode},
     rr::{Record, RecordType},
     xfer::DnsResponse,
 };
-use trust_dns_resolver::{
+use hickory_resolver::{
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
     error::{
         ResolveError,
@@ -21,10 +19,12 @@ use trust_dns_resolver::{
     },
     TokioAsyncResolver,
 };
-use trust_dns_server::{
+use hickory_server::{
     authority::MessageResponseBuilder,
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
 };
+use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::{
     cache::Cache,
