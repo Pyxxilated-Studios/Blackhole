@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function server() {
-    ./blackhole ${@}
+    exec ./blackhole ${@}
 }
 
 function client() {
