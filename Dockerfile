@@ -1,4 +1,4 @@
-FROM node:19.5.0-bullseye-slim as client
+FROM node:20-bullseye-slim as client
 
 WORKDIR /client
 
