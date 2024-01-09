@@ -112,10 +112,7 @@ impl<'a> Filter<'a> {
 
     async fn download(list: List) -> Result<(), Error> {
         #[cfg(debug_assertions)]
-        {
-            use tracing::debug;
-            debug!("Downloading: {list:?}");
-        }
+        tracing::debug!("Downloading: {list:?}");
 
         let path = list.to_string();
         let path = Path::new(&path);
@@ -236,19 +233,15 @@ impl<'a> Filter<'a> {
     /// Reset the Global Filter to a blank slate. This is mostly useful
     /// when removing filters
     ///
-    pub async fn reset(old: Option<Vec<List>>) {
-        let lists = if let Some(old_lists) = old {
-            old_lists
-        } else {
-            FILTER.read().await.lists.iter().cloned().collect()
+    pub async fn reset(old: Option<AHashSet<List>>) {
+        let lists = match old {
+            Some(old_lists) => old_lists,
+            None => FILTER.read().await.lists.iter().cloned().collect(),
         };
 
         for list in lists {
             #[cfg(debug_assertions)]
-            {
-                use tracing::debug;
-                debug!("Removing {list:?} ({})", list.to_string());
-            }
+            tracing::debug!("Removing {list:?} ({})", list.to_string());
 
             std::fs::remove_file(list.to_string()).unwrap_or_default();
         }
@@ -326,7 +319,7 @@ impl<'a> Filter<'a> {
         }
     }
 
-    pub fn lists() -> Vec<List> {
+    pub fn lists() -> AHashSet<List> {
         FILTER
             .try_read()
             .map(|filters| filters.lists.clone().into_iter().collect())

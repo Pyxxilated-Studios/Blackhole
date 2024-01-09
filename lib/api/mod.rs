@@ -1,123 +1,217 @@
 use std::net::Ipv6Addr;
 
-use ahash::AHashMap;
 use prometheus_client::encoding::text::encode;
-use serde::Serialize;
-use tracing::error;
+use serde::{Deserialize, Serialize};
+use tokio::sync::watch::Receiver;
 use warp::{
     body::BodyDeserializeError, filters::BoxedFilter, http::Response, hyper::header::CONTENT_TYPE,
     reply::json, Filter, Rejection, Reply,
 };
 
-use crate::{config::Config, filter, metrics::REGISTRY, statistics::Statistics};
+use crate::metrics::REGISTRY;
+
+#[derive(Serialize, Deserialize)]
+struct Timespan {
+    from: Option<usize>,
+    to: Option<usize>,
+}
 
 pub struct Server;
 
-fn statistics() -> BoxedFilter<(impl Reply,)> {
-    let all = warp::path("statistics")
-        .and(warp::path::end())
-        .map(Server::all);
-
-    warp::path!("statistics" / String)
-        .and(warp::path::end())
-        .and(warp::query::<AHashMap<String, String>>())
-        .map(|statistic: String, params| Server::statistics(&statistic, &params))
-        .or(all)
-        .boxed()
-}
-
-fn config() -> BoxedFilter<(impl Reply,)> {
-    warp::path!("config")
-        .and(warp::path::end())
-        .and(warp::get().and_then(Server::config))
-        .or(warp::post()
-            .and(warp::body::json())
-            .and_then(Server::update_config)
-            .recover(|err: Rejection| async {
+impl Server {
+    /// Run the API
+    ///
+    /// # Errors
+    /// This may error out in the case that the port we're trying to bind to is already in
+    /// use.
+    ///
+    #[coverage(off)]
+    pub async fn run(self, mut shutdown_signal: Receiver<bool>) -> Result<(), warp::Error> {
+        let api = warp::path("api")
+            .and(
+                Self::statistics()
+                    .or(Self::filters())
+                    .or(Self::config())
+                    .or(Self::metrics()),
+            )
+            .recover(|err: Rejection| async move {
                 #[derive(Serialize)]
                 struct Error {
                     reason: String,
                 }
 
-                match err.find::<BodyDeserializeError>() {
-                    Some(err) => Ok(Box::new(
-                        json(&Error {
-                            reason: err.to_string(),
-                        })
-                        .into_response(),
-                    )),
-                    None => Err(err),
-                }
-            }))
-        .boxed()
-}
+                err.find::<BodyDeserializeError>().map_or_else(
+                    || {
+                        tracing::error!("{err:#?}");
 
-fn metrics() -> BoxedFilter<(impl Reply,)> {
-    warp::path("metrics")
-        .and(warp::get())
-        .and(warp::path::end())
-        .map(|| {
-            let mut metrics = String::default();
-            encode(&mut metrics, &REGISTRY.read().unwrap()).unwrap();
-            Response::builder()
-                .header(
-                    CONTENT_TYPE,
-                    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+                        Ok(warp::reply::with_status(
+                            json(&Error {
+                                reason: format!("{err:#?}"),
+                            }),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        ))
+                    },
+                    |err| {
+                        Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                            json(&Error {
+                                reason: err.to_string(),
+                            }),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        ))
+                    },
                 )
-                .body(metrics)
-        })
-        .boxed()
-}
+            });
 
-impl Server {
-    #[coverage(off)]
-    pub async fn run(self) {
-        let api = warp::path("api").and(statistics().or(config()).or(metrics()));
+        warp::serve(api)
+            .try_bind_with_graceful_shutdown((Ipv6Addr::UNSPECIFIED, 5000), async move {
+                let _ = shutdown_signal.changed().await;
+            })?
+            .1
+            .await;
 
-        warp::serve(api).run((Ipv6Addr::UNSPECIFIED, 5000)).await;
+        Ok(())
     }
 
-    fn all() -> Response<warp::hyper::Body> {
+    fn statistics() -> BoxedFilter<(impl Reply,)> {
+        warp::path!("statistics" / String)
+            .and(warp::query::<Timespan>())
+            .map(|statistic: String, params| statistics::statistic(&statistic, &params))
+            .or(warp::path("statistics").map(statistics::all))
+            .boxed()
+    }
+
+    fn config() -> BoxedFilter<(impl Reply,)> {
+        warp::path("config")
+            .and(warp::get().and_then(config::get))
+            .or(warp::path("config")
+                .and(warp::post())
+                .and(warp::body::json())
+                .and_then(config::update))
+            .boxed()
+    }
+
+    fn metrics() -> BoxedFilter<(impl Reply,)> {
+        warp::path("metrics")
+            .and(warp::get())
+            .map(|| {
+                let mut response = Response::<String>::default();
+                response.headers_mut().insert(
+                    CONTENT_TYPE,
+                    warp::http::header::HeaderValue::from_static(
+                        "application/openmetrics-text; version=1.0.0; charset=utf-8",
+                    ),
+                );
+                encode(response.body_mut(), &REGISTRY.read().unwrap()).unwrap();
+                response
+            })
+            .boxed()
+    }
+
+    fn filters() -> BoxedFilter<(impl Reply,)> {
+        warp::path("filters")
+            .and(warp::get().and_then(filters::all))
+            .or(warp::path("filters")
+                .and(warp::post())
+                .and(warp::body::json())
+                .and_then(filters::add))
+            .or(warp::path("filters")
+                .and(warp::delete())
+                .and(warp::body::json())
+                .and_then(filters::remove))
+            .boxed()
+    }
+}
+
+mod statistics {
+    use ahash::AHashMap;
+    use warp::{
+        http::Response,
+        reply::{json, Reply},
+    };
+
+    use crate::statistics::Statistics;
+
+    use super::Timespan;
+
+    pub(super) fn all() -> Response<warp::hyper::Body> {
         json(&Statistics::statistics()).into_response()
     }
 
-    fn statistics(
-        statistic: &str,
-        params: &AHashMap<String, String>,
-    ) -> Response<warp::hyper::Body> {
-        let from = params.get("from");
-        let to = params.get("to");
-
-        match Statistics::retrieve(&statistic.to_ascii_lowercase(), from, to) {
-            Some(statistics) => json(&statistics).into_response(),
-            None => json(&AHashMap::<&str, String>::default()).into_response(),
-        }
+    pub(super) fn statistic(statistic: &str, params: &Timespan) -> Response<warp::hyper::Body> {
+        Statistics::retrieve(&statistic.to_ascii_lowercase(), params.from, params.to).map_or_else(
+            || json(&AHashMap::<&str, String>::default()).into_response(),
+            |statistics| json(&statistics).into_response(),
+        )
     }
+}
 
-    async fn config() -> Result<Response<warp::hyper::Body>, warp::Rejection> {
+mod config {
+    use warp::{
+        http::Response,
+        reply::{json, Reply},
+    };
+
+    use crate::{config::Config, filter};
+
+    pub(super) async fn get() -> Result<Response<warp::hyper::Body>, warp::Rejection> {
         let mut config = Config::get(Clone::clone).await;
         config.filters = filter::Filter::lists();
 
         Ok(json(&config).into_response())
     }
 
-    async fn update_config(body: Config) -> Result<Response<String>, warp::Rejection> {
+    pub(super) async fn update(
+        body: Config,
+    ) -> Result<Response<warp::hyper::Body>, warp::Rejection> {
         #[cfg(debug_assertions)]
-        {
-            use tracing::debug;
-            debug!("Updating Config: {body:#?}");
-        }
+        tracing::debug!("Updating Config: {body:#?}");
 
-        match Config::set(|config| *config = body.clone()).await {
-            Ok(()) => Ok(Response::builder().body(String::default()).unwrap()),
-            Err(err) => {
-                error!("{err}");
-                Ok(Response::builder()
-                    .status(500)
-                    .body(err.to_string())
-                    .unwrap())
-            }
-        }
+        Config::set(|config| *config = body.clone())
+            .await
+            .map(|()| Response::default())
+            .map_err(warp::reject::custom)
+    }
+}
+
+mod filters {
+    use warp::{
+        http::Response,
+        reply::{json, Reply},
+    };
+
+    use crate::config::Config;
+
+    pub(super) async fn all() -> Result<Response<warp::hyper::Body>, warp::Rejection> {
+        let filters = Config::get(|config| config.filters.clone()).await;
+        Ok(json(&filters).into_response())
+    }
+
+    pub(super) async fn add(
+        filter: crate::filter::List,
+    ) -> Result<Response<warp::hyper::Body>, warp::Rejection> {
+        #[cfg(debug_assertions)]
+        tracing::debug!("Adding filter list: {filter:#?}");
+
+        Config::set(|config| {
+            config.filters.insert(filter.clone());
+        })
+        .await
+        .map(|()| Response::default())
+        .map_err(warp::reject::custom)
+    }
+
+    pub(super) async fn remove(
+        filter: crate::filter::List,
+    ) -> Result<Response<warp::hyper::Body>, warp::Rejection> {
+        #[cfg(debug_assertions)]
+        tracing::debug!("Removing filter list: {filter:#?}");
+
+        Config::set(|config| {
+            config.filters.remove(&filter);
+        })
+        .await
+        .map(|()| Response::default())
+        .map_err(warp::reject::custom)
     }
 }
 
@@ -139,7 +233,7 @@ mod test {
 
     #[tokio::test]
     async fn statistics() {
-        let filter = super::statistics();
+        let filter = super::Server::statistics();
 
         let worker = WORKER.lock().await;
         let response = warp::test::request()
@@ -159,7 +253,7 @@ mod test {
 
     #[tokio::test]
     async fn all() {
-        let filter = super::statistics();
+        let filter = super::Server::statistics();
 
         let worker = WORKER.lock().await;
 
@@ -199,7 +293,7 @@ mod test {
 
     #[tokio::test]
     async fn requests() {
-        let filter = super::statistics();
+        let filter = super::Server::statistics();
 
         let worker = WORKER.lock().await;
         let request = crate::statistics::Request {
@@ -233,7 +327,7 @@ mod test {
 
     #[tokio::test]
     async fn config() {
-        let filter = super::config();
+        let filter = super::Server::config();
 
         let worker = WORKER.lock().await;
 
@@ -258,7 +352,7 @@ mod test {
 
     #[tokio::test]
     async fn update_config() {
-        let filter = super::config();
+        let filter = super::Server::config();
 
         let worker = WORKER.lock().await;
 
