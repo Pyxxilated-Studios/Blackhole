@@ -51,6 +51,10 @@ EXPOSE 53/tcp 53/udp 3000 5000
 
 ENV LOG_LEVEL="info"
 
+# See https://github.com/gornostay25/svelte-adapter-bun/issues/39
+ENV PROTOCOL_HEADER=x-forwarded-proto
+ENV HOST_HEADER=x-forwarded-host
+
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "dig", "-p", "53", "example.com", "@127.0.0.1" ]
 
 ENTRYPOINT [ "./entrypoint.bash" ]
