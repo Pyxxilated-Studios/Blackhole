@@ -180,19 +180,14 @@ impl Statistics {
     }
 
     #[instrument]
-    pub fn retrieve(
-        statistic: &str,
-        from: Option<&String>,
-        to: Option<&String>,
-    ) -> Option<Statistic> {
+    pub fn retrieve(statistic: &str, from: Option<usize>, to: Option<usize>) -> Option<Statistic> {
         debug!("Retrieving statistics");
 
         match &STATISTICS.read().unwrap().statistics.get(statistic) {
             Some(Statistic::Requests(ref requests)) => {
                 let len = requests.len();
 
-                let from = from.map_or(0, |from| from.parse().unwrap_or_default());
-                let to = to.map_or(len, |to| to.parse().unwrap_or(len));
+                let [from, to] = std::cmp::minmax(from.unwrap_or_default(), to.unwrap_or(len));
 
                 let mut requests = requests
                     .iter()

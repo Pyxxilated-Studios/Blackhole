@@ -80,9 +80,9 @@ async fn main() {
     };
 
     info!("Shutting down");
-    shutdown
-        .send(true)
-        .expect("There was an issue shutting down");
+    if let Err(err) = shutdown.send(true) {
+        error!("Error sending shutdown signal: {err}");
+    };
 
     tokio::time::timeout(Duration::from_secs(10), shutdown.closed())
         .await

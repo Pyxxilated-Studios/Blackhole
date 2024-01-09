@@ -5,6 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
+use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -34,6 +35,8 @@ pub enum Error {
     FilterError(#[from] filter::Error),
 }
 
+impl warp::reject::Reject for Error {}
+
 const fn default_port() -> u16 {
     53
 }
@@ -50,7 +53,7 @@ pub struct Config {
     #[serde(alias = "upstream", rename(serialize = "upstream"))]
     pub upstreams: HashSet<Upstream>,
     #[serde(alias = "filter", rename(serialize = "filter"), default)]
-    pub filters: Vec<List>,
+    pub filters: AHashSet<List>,
     #[serde(alias = "schedule", rename(serialize = "schedule"))]
     pub schedules: Vec<Schedule>,
 }
@@ -86,10 +89,7 @@ impl Load for PathBuf {
         let conf: Config = toml::from_str(&conf)?;
 
         #[cfg(debug_assertions)]
-        {
-            use tracing::debug;
-            debug!("Config: {config:#?} :: {conf:#?}");
-        }
+        tracing::debug!("Config: {config:#?} :: {conf:#?}");
 
         config.upstreams.extend(conf.upstreams);
         config.filters.extend(conf.filters);
@@ -109,11 +109,10 @@ impl Config {
     /// This can fail if the configuration profile fails to load,
     /// see [`Load`]
     ///
+    #[inline]
     pub async fn load<C: Load + 'static + Send + Sync>(loader: &C) -> Result<(), Error> {
         let mut config = CONFIG.write().await;
-        loader.load(&mut config).await?;
-
-        Ok(())
+        loader.load(&mut config).await
     }
 
     ///
@@ -126,14 +125,16 @@ impl Config {
     ///  - The config file is not writable
     ///
     pub async fn save() -> Result<(), Error> {
+        let file = CONFIG_FILE
+            .read()
+            .await
+            .as_ref()
+            .map_or_else(default_path, Clone::clone);
+
+        tracing::debug!("Saving to {file}");
+
         std::fs::write(
-            Path::new(
-                &*CONFIG_FILE
-                    .read()
-                    .await
-                    .as_ref()
-                    .map_or_else(default_path, Clone::clone),
-            ),
+            Path::new(&*file),
             toml::to_string_pretty(&*CONFIG.read().await)?,
         )?;
 
@@ -143,6 +144,7 @@ impl Config {
     ///
     /// Retrieve a config variable from the global Configuration
     ///
+    #[inline]
     pub async fn get<F, T>(func: F) -> T
     where
         F: Fn(&Self) -> T + Send + Sync,

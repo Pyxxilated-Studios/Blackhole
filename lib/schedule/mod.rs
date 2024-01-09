@@ -56,6 +56,7 @@ impl Sched {
         }
     }
 
+    #[inline]
     async fn init(&self) {
         debug!("Running Sched init");
         match self {

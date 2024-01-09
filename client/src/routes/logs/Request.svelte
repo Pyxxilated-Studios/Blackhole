@@ -8,8 +8,8 @@
         request.rule?.ty === "Deny"
             ? "border-l-2 border-l-error"
             : request.rule?.ty === "Allow"
-            ? "border-l-2 border-l-success"
-            : "";
+              ? "border-l-2 border-l-success"
+              : "";
 
     let timestamp = new Date(request.timestamp.secs_since_epoch * 1_000);
 </script>

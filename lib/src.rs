@@ -1,6 +1,7 @@
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
 #![feature(
+    cmp_minmax,
     coverage_attribute,
     hash_set_entry,
     ip,
@@ -55,8 +56,25 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
     let dns_server = {
         let address = (IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
         let mut server = ServerFuture::new(Server {});
-        server.register_socket(UdpSocket::bind(address).await?);
-        server.register_listener(TcpListener::bind(address).await?, Duration::from_secs(30));
+        match UdpSocket::bind(address).await {
+            Ok(socket) => {
+                server.register_socket(socket);
+            }
+            Err(err) => {
+                error!("Failed to bind udp socket: {err}");
+                return Err(err);
+            }
+        }
+
+        match TcpListener::bind(address).await {
+            Ok(listener) => {
+                server.register_listener(listener, Duration::from_secs(30));
+            }
+            Err(err) => {
+                error!("Failed to bind tcp listener: {err}");
+                return Err(err);
+            }
+        }
 
         info!(
             "Running DNS server on {:?}",
@@ -71,12 +89,17 @@ pub async fn spawn(mut shutdown_signal: Receiver<bool>) -> Result<JoinHandle<()>
 
         tokio::spawn(async move {
             if let Err(err) = server.block_until_done().await {
-                error!("{err}");
+                error!("DNS Server failure: {err}");
             }
         })
     };
 
-    let api = tokio::spawn(api::Server.run());
+    let api_shutdown_signal = shutdown_signal.clone();
+    let api = tokio::spawn(async move {
+        if let Err(err) = api::Server.run(api_shutdown_signal).await {
+            error!("API failure: {err}");
+        }
+    });
 
     Ok(tokio::spawn(async move {
         tokio::select! {

@@ -3,8 +3,7 @@
     import type { Average, Cache, Requests } from "../types";
     import { onMount } from "svelte";
 
-    import { getNotificationsContext } from "svelte-notifications";
-    const { addNotification } = getNotificationsContext();
+    import { toast } from "@zerodevx/svelte-toast";
 
     type Data = { labels: string[]; datasets: { values: number[] }[] };
 
@@ -66,22 +65,16 @@
             if (cacheResponse.ok) {
                 cache = (await cacheResponse.json()).Cache;
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await cacheResponse.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await cacheResponse.json()).reason, {
+                    classes: ["error"],
                 });
             }
 
             if (averageResponse.ok) {
                 average = (await averageResponse.json()).Average;
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await averageResponse.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await averageResponse.json()).reason, {
+                    classes: ["error"],
                 });
             }
 
@@ -144,19 +137,13 @@
                     blockedRequests.labels = blockedRequests.labels.slice(-MAX_TIME_SERIES);
                 }
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await requestsResponse.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await requestsResponse.json()).reason, {
+                    classes: ["error"],
                 });
             }
         } catch (err: unknown) {
-            addNotification({
-                type: "error",
-                text: err,
-                removeAfter: 3000,
-                position: "bottom-center",
+            toast.push(String(err), {
+                classes: ["error"],
             });
         }
     };

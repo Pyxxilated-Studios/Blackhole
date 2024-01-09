@@ -147,11 +147,11 @@ impl Server {
                         builder.error_msg(request.header(), ResponseCode::NXDomain)
                     }
                     ResolverMessage(_) | Msg(_) | NoConnections | Io(_) | Proto(_) | Timeout => {
+                        error!("{err}");
                         builder.error_msg(request.header(), ResponseCode::ServFail)
                     }
                     _ => builder.error_msg(request.header(), ResponseCode::ServFail),
                 };
-                error!("{err}");
                 response_handle.send_response(response).await
             }
         }
@@ -207,41 +207,49 @@ impl RequestHandler for Server {
 }
 
 impl statistics::Request {
+    #[inline]
     fn client(&mut self, client: String) -> &mut Self {
         self.client = client;
         self
     }
 
+    #[inline]
     fn query_type(&mut self, query_type: RecordType) -> &mut Self {
         self.query_type = query_type;
         self
     }
 
+    #[inline]
     fn code(&mut self, code: String) -> &mut Self {
         self.status = code;
         self
     }
 
+    #[inline]
     fn answers(&mut self, answers: &[Record]) -> &mut Self {
         self.answers = answers.to_vec();
         self
     }
 
+    #[inline]
     fn elapsed(&mut self, elapsed: usize) -> &mut Self {
         self.elapsed = elapsed;
         self
     }
 
+    #[inline]
     fn question(&mut self, question: String) -> &mut Self {
         self.question = question;
         self
     }
 
+    #[inline]
     fn rule(&mut self, rule: Option<Rule>) -> &mut Self {
         self.rule = rule;
         self
     }
 
+    #[inline]
     fn cached(&mut self, cached: bool) -> &mut Self {
         self.cached = cached;
         self

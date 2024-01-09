@@ -6,8 +6,7 @@
 
     import { inview } from "svelte-inview";
 
-    import { getNotificationsContext } from "svelte-notifications";
-    const { addNotification } = getNotificationsContext();
+    import { toast } from "@zerodevx/svelte-toast";
 
     let requests: Requests;
 
@@ -29,19 +28,13 @@
                     )
                 );
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await resp.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await resp.json()).reason, {
+                    classes: ["error"],
                 });
             }
         } catch (err: unknown) {
-            addNotification({
-                type: "error",
-                text: err,
-                removeAfter: 3000,
-                position: "bottom-center",
+            toast.push(String(err), {
+                classes: ["error"],
             });
         }
     };

@@ -2,8 +2,7 @@
     import type { Config } from "../../types";
     import { onMount } from "svelte";
 
-    import { getNotificationsContext } from "svelte-notifications";
-    const { addNotification } = getNotificationsContext();
+    import { toast } from "@zerodevx/svelte-toast";
 
     let config: Config;
 
@@ -13,19 +12,13 @@
             if (configResponse.ok) {
                 config = await configResponse.json();
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await configResponse.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await configResponse.json()).reason, {
+                    classes: ["error"],
                 });
             }
         } catch (err: unknown) {
-            addNotification({
-                type: "error",
-                text: err,
-                removeAfter: 3000,
-                position: "bottom-center",
+            toast.push(String(err), {
+                classes: ["error"],
             });
         }
     };
@@ -38,7 +31,7 @@
             }));
 
             config.filter = config.filter.filter((filter) => {
-                filter.name !== "" && filter.url !== "";
+                return filter.name.length > 0 && filter.url.length > 0;
             });
 
             let response = await fetch("/api/config", {
@@ -47,26 +40,17 @@
             });
 
             if (response.ok) {
-                addNotification({
-                    type: "success",
-                    text: "Updated Config",
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push("Updated Config", {
+                    classes: ["success"],
                 });
             } else {
-                addNotification({
-                    type: "error",
-                    text: (await response.json()).reason,
-                    removeAfter: 3000,
-                    position: "bottom-center",
+                toast.push((await response.json()).reason, {
+                    classes: ["error"],
                 });
             }
         } catch (err: unknown) {
-            addNotification({
-                type: "error",
-                text: err,
-                removeAfter: 3000,
-                position: "bottom-center",
+            toast.push(String(err), {
+                classes: ["error"],
             });
         }
     };
