@@ -17,8 +17,8 @@
         "@sveltejs/kit": "^2.5.18",
         "@sveltejs/vite-plugin-svelte": "^3.1.1",
         "@tailwindcss/typography": "^0.5.13",
-        "@typescript-eslint/eslint-plugin": "^7.14.1",
-        "@typescript-eslint/parser": "^7.14.1",
+        "@typescript-eslint/eslint-plugin": "^7.15.0",
+        "@typescript-eslint/parser": "^7.15.0",
         "autoprefixer": "^10.4.19",
         "daisyui": "^4.12.10",
         "eslint": "^9.6.0",
@@ -34,8 +34,8 @@
         "svelte-preprocess": "^6.0.1",
         "tailwindcss": "^3.4.4",
         "tslib": "^2.6.3",
-        "typescript": "^5.5.2",
-        "vite": "^5.3.2"
+        "typescript": "^5.5.3",
+        "vite": "^5.3.3"
     },
     "dependencies": {
         "@zerodevx/svelte-toast": "^0.9.5",
