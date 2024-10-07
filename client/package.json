@@ -14,14 +14,14 @@
     "devDependencies": {
         "@catppuccin/tailwindcss": "^0.1.6",
         "@fullhuman/postcss-purgecss": "^6",
-        "@sveltejs/kit": "^2.6.1",
+        "@sveltejs/kit": "^2.6.2",
         "@sveltejs/vite-plugin-svelte": "^3.1.2",
         "@tailwindcss/typography": "^0.5.15",
-        "@typescript-eslint/eslint-plugin": "^8.7.0",
-        "@typescript-eslint/parser": "^8.7.0",
+        "@typescript-eslint/eslint-plugin": "^8.8.0",
+        "@typescript-eslint/parser": "^8.8.0",
         "autoprefixer": "^10.4.20",
-        "daisyui": "^4.12.10",
-        "eslint": "^9.11.1",
+        "daisyui": "^4.12.12",
+        "eslint": "^9.12.0",
         "eslint-config-prettier": "^9.1.0",
         "eslint-plugin-svelte": "^2.44.1",
         "postcss": "^8.4.47",
@@ -40,7 +40,7 @@
     "dependencies": {
         "@zerodevx/svelte-toast": "^0.9.6",
         "svelte-frappe-charts": "^1.10.0",
-        "svelte-inview": "^4.0.3"
+        "svelte-inview": "^4.0.4"
     },
     "type": "module"
 }
